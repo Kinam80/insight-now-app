@@ -1,0 +1,149 @@
+from fastapi import APIRouter, HTTPException, Header
+from pydantic import BaseModel
+from typing import Optional
+from app.database import supabase
+from app.core.security import decode_access_token
+from datetime import datetime
+
+router = APIRouter(prefix="/posts", tags=["유료 분석 글"])
+
+class PostCreate(BaseModel):
+    title: str
+    preview: str
+    content: str
+    access_type: str = "premium_only"
+    single_price: Optional[int] = None
+    tags: Optional[list] = []
+    thumbnail_url: Optional[str] = None
+
+def get_current_user(authorization: str = None):
+    if not authorization:
+        return None
+    try:
+        if authorization.startswith("Bearer "):
+            token = authorization[7:]
+        else:
+            token = authorization
+        payload = decode_access_token(token)
+        print(f"✅ 토큰 디코딩 성공: {payload}")
+        return payload
+    except Exception as e:
+        print(f"❌ 토큰 디코딩 실패: {e}")
+        return None
+
+@router.get("/")
+def get_posts(authorization: Optional[str] = Header(default=None)):
+    user = get_current_user(authorization)
+
+    result = supabase.table("analysis_posts")\
+        .select("id, title, preview, access_type, single_price, tags, thumbnail_url, view_count, published_at")\
+        .eq("is_published", True)\
+        .order("published_at", desc=True)\
+        .execute()
+
+    posts = result.data
+
+    for post in posts:
+        post["is_purchased"] = False
+        if user:
+            if user.get("role") == "premium" and post["access_type"] == "premium_only":
+                post["is_purchased"] = True
+            elif post["access_type"] == "free":
+                post["is_purchased"] = True
+            elif post["access_type"] == "paid_single":
+                purchase = supabase.table("post_purchases")\
+                    .select("id")\
+                    .eq("user_id", user.get("sub"))\
+                    .eq("post_id", post["id"])\
+                    .execute()
+                post["is_purchased"] = bool(purchase.data)
+
+    return {"posts": posts}
+
+@router.get("/{post_id}")
+def get_post_detail(post_id: str, authorization: Optional[str] = Header(default=None)):
+    user = get_current_user(authorization)
+
+    result = supabase.table("analysis_posts")\
+        .select("*")\
+        .eq("id", post_id)\
+        .eq("is_published", True)\
+        .execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="글을 찾을 수 없습니다.")
+
+    post = result.data[0]
+
+    supabase.table("analysis_posts")\
+        .update({"view_count": post["view_count"] + 1})\
+        .eq("id", post_id)\
+        .execute()
+
+    if post["access_type"] == "free":
+        return post
+
+    if not user:
+        return {
+            "id": post["id"],
+            "title": post["title"],
+            "preview": post["preview"],
+            "access_type": post["access_type"],
+            "single_price": post["single_price"],
+            "is_locked": True
+        }
+
+    if post["access_type"] == "premium_only":
+        if user.get("role") in ["premium", "admin"]:
+            return post
+        return {
+            "id": post["id"],
+            "title": post["title"],
+            "preview": post["preview"],
+            "access_type": post["access_type"],
+            "is_locked": True,
+            "message": "구독자 전용 콘텐츠입니다."
+        }
+
+    if post["access_type"] == "paid_single":
+        if user.get("role") == "admin":
+            return post
+        purchase = supabase.table("post_purchases")\
+            .select("id")\
+            .eq("user_id", user.get("sub"))\
+            .eq("post_id", post_id)\
+            .execute()
+        if purchase.data:
+            return post
+        return {
+            "id": post["id"],
+            "title": post["title"],
+            "preview": post["preview"],
+            "access_type": post["access_type"],
+            "single_price": post["single_price"],
+            "is_locked": True,
+            "message": "단건 결제가 필요한 콘텐츠입니다."
+        }
+
+@router.post("/admin/create")
+def create_post(post: PostCreate, authorization: Optional[str] = Header(default=None)):
+    user = get_current_user(authorization)
+    print(f"👤 현재 유저: {user}")
+
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="관리자만 글을 작성할 수 있습니다.")
+
+    result = supabase.table("analysis_posts").insert({
+        "author_id": user.get("sub"),
+        "title": post.title,
+        "preview": post.preview,
+        "content": post.content,
+        "access_type": post.access_type,
+        "single_price": post.single_price,
+        "tags": post.tags,
+        "thumbnail_url": post.thumbnail_url,
+        "is_published": True,
+        "published_at": datetime.utcnow().isoformat()
+    }).execute()
+
+    return {"message": "글 발행 완료!", "post": result.data[0]}
