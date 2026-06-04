@@ -49,15 +49,13 @@
     </div>
     
     <script>
-        // 결제 등급 선택에 따라 가격 입력창 보이기/숨기기
+        // 클라우드 서버 주소 (상수화하여 관리)
+        const API_BASE = "https://insight-now-app.onrender.com";
+
         function togglePriceInput() {
             const accessType = document.getElementById('access_type').value;
             const priceGroup = document.getElementById('price-group');
-            if (accessType === 'paid_single') {
-                priceGroup.style.display = 'block';
-            } else {
-                priceGroup.style.display = 'none';
-            }
+            priceGroup.style.display = (accessType === 'paid_single') ? 'block' : 'none';
         }
 
         async function login() {
@@ -65,7 +63,7 @@
             const password = document.getElementById('password').value;
             
             try {
-                const res = await fetch('http://127.0.0.1:8000/auth/login', {
+                const res = await fetch(`${API_BASE}/auth/login`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, password })
@@ -81,7 +79,7 @@
                 document.getElementById('login-form').style.display = 'none';
                 document.getElementById('post-form').style.display = 'block';
             } catch (err) {
-                alert('서버 연결 실패! 백엔드가 켜져있는지 확인하세요.');
+                alert('서버 연결 실패! Render 서버 상태를 확인하세요.');
             }
         }
         
@@ -99,7 +97,7 @@
             };
             
             try {
-                const res = await fetch('http://127.0.0.1:8000/posts/admin/create', {
+                const res = await fetch(`${API_BASE}/posts/admin/create`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -110,10 +108,8 @@
                 
                 if (res.ok) {
                     alert('🎉 분석 글 발행 완료!');
-                    document.getElementById('title').value = '';
-                    document.getElementById('preview').value = '';
-                    document.getElementById('content').value = '';
-                    document.getElementById('single_price').value = '';
+                    // 폼 초기화 로직
+                    ['title', 'preview', 'content', 'single_price'].forEach(id => document.getElementById(id).value = '');
                 } else {
                     const errData = await res.json();
                     alert('오류 발생: ' + (errData.detail || res.statusText));
