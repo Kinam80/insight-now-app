@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
 import 'package:provider/provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'constants/api_constants.dart';
-import 'dart:async'; // 👈 이 줄을 추가하세요.
+// 기존에 프로젝트에서 사용 중이던 다른 파일들도 이 아래에 이어서 작성하시면 됩니다.
 
 void main() {
   runApp(
@@ -626,6 +627,7 @@ class _PostsTabState extends State<PostsTab> {
 }
 
 // --- 💬 [4번 탭] VIP 회원 실시간 대화방 (완벽 독립 버전) ---
+// [기존 VIPLiveChatTab 클래스 유지]
 class VIPLiveChatTab extends StatefulWidget {
   const VIPLiveChatTab({super.key});
 
@@ -633,39 +635,40 @@ class VIPLiveChatTab extends StatefulWidget {
   State<VIPLiveChatTab> createState() => _VIPLiveChatTabState();
 }
 
+// [수정된 채팅 상태 관리 클래스]
 class _VIPLiveChatTabState extends State<VIPLiveChatTab> {
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  List<dynamic> liveMessages = [];
 
-  final List<Map<String, String>> liveMessages = [
-    {'user': '자산운용가K', 'msg': '엔비디아 시외 폭등 나오네요. 내일 국내 디자인하우스 테마 수급 체크해야 합니다.'},
-    {'user': '테헤란로고래', 'msg': '에이직랜드랑 가온칩스 아침 시초가 갭상승 자리 무조건 나오겠네요.'},
-    {'user': '리서치센터장', 'msg': '환율이 1,370원 선 무너지지 않으면 외인 매도세 보수적으로 대응하시는 걸 추천합니다.'},
-    {'user': '형님(VIP)', 'msg': '실시간 마켓 리포트 속보 보고 후성 정리 타이밍 대기 중입니다.'},
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _fetchMessages();
+  }
 
-  void _executeSend() {
+  Future<void> _fetchMessages() async {
+    try {
+      final res = await http.get(Uri.parse('https://insight-now-app.onrender.com/chat/messages'));
+      if (res.statusCode == 200 && mounted) {
+        setState(() => liveMessages = json.decode(res.body));
+      }
+    } catch (e) {
+      debugPrint("에러: $e");
+    }
+  }
+
+  Future<void> _executeSend() async {
     final text = _chatController.text.trim();
     if (text.isEmpty) return;
 
-    setState(() {
-      liveMessages.add({
-        'user': '형님(VIP)',
-        'msg': text,
-      });
-    });
-
+    await http.post(
+      Uri.parse('https://insight-now-app.onrender.com/chat/messages'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'email': 'user@test.com', 'content': text}),
+    );
     _chatController.clear();
-
-    Future.delayed(const Duration(milliseconds: 50), () {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
-      }
-    });
+    _fetchMessages();
   }
 
   @override
@@ -682,13 +685,11 @@ class _VIPLiveChatTabState extends State<VIPLiveChatTab> {
         Container(
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
           color: const Color(0xFF151821),
-          child: const Row(
-            children: [
-              Icon(Icons.radio_button_checked, color: Colors.redAccent, size: 16),
-              SizedBox(width: 8),
-              Text('VIP 실시간 세션 연결됨 (온라인 124명)', style: TextStyle(color: Colors.white60, fontSize: 12, fontWeight: FontWeight.bold)),
-            ],
-          ),
+          child: const Row(children: [
+            Icon(Icons.radio_button_checked, color: Colors.redAccent, size: 16),
+            SizedBox(width: 8),
+            Text('VIP 실시간 세션 연결됨 (온라인 124명)', style: TextStyle(color: Colors.white60, fontSize: 12, fontWeight: FontWeight.bold)),
+          ]),
         ),
         Expanded(
           child: ListView.builder(
@@ -697,7 +698,7 @@ class _VIPLiveChatTabState extends State<VIPLiveChatTab> {
             itemCount: liveMessages.length,
             itemBuilder: (context, i) {
               final chat = liveMessages[i];
-              final isMe = chat['user']!.contains('형님');
+              final isMe = chat['user_email'] == 'user@test.com';
               return Align(
                 alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
                 child: Container(
@@ -714,9 +715,9 @@ class _VIPLiveChatTabState extends State<VIPLiveChatTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(chat['user']!, style: TextStyle(color: isMe ? const Color(0xFF111318) : Colors.amber[300], fontSize: 12, fontWeight: FontWeight.bold)),
+                      Text(chat['user_email'] ?? '사용자', style: TextStyle(color: isMe ? const Color(0xFF111318) : Colors.amber[300], fontSize: 12, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 4),
-                      Text(chat['msg']!, style: TextStyle(color: isMe ? const Color(0xFF111318) : Colors.white, fontSize: 14, height: 1.4)),
+                      Text(chat['content'] ?? '', style: TextStyle(color: isMe ? const Color(0xFF111318) : Colors.white, fontSize: 14, height: 1.4)),
                     ],
                   ),
                 ),
@@ -734,18 +735,10 @@ class _VIPLiveChatTabState extends State<VIPLiveChatTab> {
                   controller: _chatController,
                   style: const TextStyle(color: Colors.white),
                   onSubmitted: (_) => _executeSend(),
-                  decoration: const InputDecoration(
-                    hintText: '실시간 거시 경제 정보 공유하기...',
-                    hintStyle: TextStyle(color: Colors.white30, fontSize: 14),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12),
-                  ),
+                  decoration: const InputDecoration(hintText: '실시간 거시 경제 정보 공유하기...', hintStyle: TextStyle(color: Colors.white30, fontSize: 14), border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 12)),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.send, color: Colors.amber), 
-                onPressed: _executeSend,
-              ),
+              IconButton(icon: const Icon(Icons.send, color: Colors.amber), onPressed: _executeSend),
             ],
           ),
         )
