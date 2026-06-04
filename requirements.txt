@@ -9,3 +9,4 @@ groq>=0.4.1
 feedparser>=6.0.10
 apscheduler>=3.10.4
 httpx>=0.25.0
+yfinance>=0.2.37
