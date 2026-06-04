@@ -635,7 +635,6 @@ class VIPLiveChatTab extends StatefulWidget {
   State<VIPLiveChatTab> createState() => _VIPLiveChatTabState();
 }
 
-// [수정된 채팅 상태 관리 클래스]
 class _VIPLiveChatTabState extends State<VIPLiveChatTab> {
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -647,14 +646,30 @@ class _VIPLiveChatTabState extends State<VIPLiveChatTab> {
     _fetchMessages();
   }
 
+  // 서버에서 데이터를 가져오는 핵심 함수
   Future<void> _fetchMessages() async {
     try {
       final res = await http.get(Uri.parse('https://insight-now-app.onrender.com/chat/messages'));
+      
+      // 서버에서 받은 데이터를 콘솔에 출력하여 확인 (문제 해결을 위해 필수)
+      debugPrint("서버 응답: ${res.body}");
+
       if (res.statusCode == 200 && mounted) {
-        setState(() => liveMessages = json.decode(res.body));
+        final decodedData = json.decode(res.body);
+        setState(() {
+          // 데이터가 리스트 형태인지 확인 후 할당
+          liveMessages = (decodedData is List) ? decodedData : [];
+        });
+
+        // 화면 갱신 후 맨 아래로 스크롤 이동
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients) {
+            _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+          }
+        });
       }
     } catch (e) {
-      debugPrint("에러: $e");
+      debugPrint("통신 에러: $e");
     }
   }
 
@@ -662,80 +677,77 @@ class _VIPLiveChatTabState extends State<VIPLiveChatTab> {
     final text = _chatController.text.trim();
     if (text.isEmpty) return;
 
-    await http.post(
-      Uri.parse('https://insight-now-app.onrender.com/chat/messages'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'email': 'user@test.com', 'content': text}),
-    );
-    _chatController.clear();
-    _fetchMessages();
-  }
-
-  @override
-  void dispose() {
-    _chatController.dispose();
-    _scrollController.dispose();
-    super.dispose();
+    try {
+      await http.post(
+        Uri.parse('https://insight-now-app.onrender.com/chat/messages'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'email': 'user@test.com', 'content': text}),
+      );
+      _chatController.clear();
+      await _fetchMessages(); // 전송 후 즉시 다시 불러오기
+    } catch (e) {
+      debugPrint("전송 에러: $e");
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
+        // 상단 상태바
         Container(
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
           color: const Color(0xFF151821),
           child: const Row(children: [
             Icon(Icons.radio_button_checked, color: Colors.redAccent, size: 16),
             SizedBox(width: 8),
-            Text('VIP 실시간 세션 연결됨 (온라인 124명)', style: TextStyle(color: Colors.white60, fontSize: 12, fontWeight: FontWeight.bold)),
+            Text('VIP 실시간 세션 연결됨', style: TextStyle(color: Colors.white60, fontSize: 12)),
           ]),
         ),
+        // 채팅 리스트
         Expanded(
-          child: ListView.builder(
-            controller: _scrollController,
-            padding: const EdgeInsets.all(16),
-            itemCount: liveMessages.length,
-            itemBuilder: (context, i) {
-              final chat = liveMessages[i];
-              final isMe = chat['user_email'] == 'user@test.com';
-              return Align(
-                alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(14),
-                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-                  decoration: BoxDecoration(
-                    color: isMe ? Colors.amber[400] : const Color(0xFF1E222D),
-                    borderRadius: BorderRadius.circular(16).copyWith(
-                      bottomLeft: isMe ? const Radius.circular(16) : Radius.zero,
-                      bottomRight: isMe ? Radius.zero : const Radius.circular(16),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(chat['user_email'] ?? '사용자', style: TextStyle(color: isMe ? const Color(0xFF111318) : Colors.amber[300], fontSize: 12, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4),
-                      Text(chat['content'] ?? '', style: TextStyle(color: isMe ? const Color(0xFF111318) : Colors.white, fontSize: 14, height: 1.4)),
-                    ],
-                  ),
+          child: liveMessages.isEmpty
+              ? const Center(child: Text("메시지가 없습니다.", style: TextStyle(color: Colors.white30)))
+              : ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: liveMessages.length,
+                  itemBuilder: (context, i) {
+                    final chat = liveMessages[i];
+                    final isMe = chat['user_email'] == 'user@test.com';
+                    return Align(
+                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(14),
+                        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+                        decoration: BoxDecoration(
+                          color: isMe ? Colors.amber[400] : const Color(0xFF1E222D),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(chat['user_email'] ?? '사용자', style: TextStyle(color: isMe ? Colors.black54 : Colors.amber[300], fontSize: 11)),
+                            Text(chat['content'] ?? '', style: TextStyle(color: isMe ? Colors.black : Colors.white, fontSize: 14)),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ),
+        // 입력 영역
         Container(
           padding: const EdgeInsets.all(12),
-          decoration: const BoxDecoration(color: Color(0xFF1E222D), border: Border(top: BorderSide(color: Colors.white12))),
+          decoration: const BoxDecoration(color: Color(0xFF1E222D)),
           child: Row(
             children: [
               Expanded(
                 child: TextField(
                   controller: _chatController,
                   style: const TextStyle(color: Colors.white),
-                  onSubmitted: (_) => _executeSend(),
-                  decoration: const InputDecoration(hintText: '실시간 거시 경제 정보 공유하기...', hintStyle: TextStyle(color: Colors.white30, fontSize: 14), border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 12)),
+                  decoration: const InputDecoration(hintText: '입력...', hintStyle: TextStyle(color: Colors.white30), border: InputBorder.none),
                 ),
               ),
               IconButton(icon: const Icon(Icons.send, color: Colors.amber), onPressed: _executeSend),
