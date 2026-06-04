@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:provider/provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'constants/api_constants.dart';
 
 void main() {
   runApp(
@@ -54,7 +55,7 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> login(String email, String password) async {
     try {
       final res = await http.post(
-        Uri.parse('http://127.0.0.1:8000/auth/login'),
+        Uri.parse(ApiConstants.loginEndpoint),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email, 'password': password}),
       );
@@ -380,7 +381,7 @@ class _NewsTabState extends State<NewsTab> {
 
   Future<void> _fetchNews() async {
     try {
-      final res = await http.get(Uri.parse('http://127.0.0.1:8000/news/'));
+      final res = await http.get(Uri.parse(ApiConstants.newsEndpoint));
       if (res.statusCode == 200) {
         final Map<String, dynamic> decodedData = jsonDecode(res.body);
         setState(() {
@@ -500,7 +501,7 @@ class _PostsTabState extends State<PostsTab> {
 
   Future<void> _fetchPosts() async {
     try {
-      final res = await http.get(Uri.parse('http://127.0.0.1:8000/posts/'));
+      final res = await http.get(Uri.parse(ApiConstants.postsEndpoint));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         setState(() {
