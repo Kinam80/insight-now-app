@@ -6,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi.staticfiles import StaticFiles
 
-# 내부 모듈 임포트
 from app.routers import auth, news, posts, payments, admin
 from app.news_service import fetch_and_save_news
 
@@ -22,7 +21,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 라우터 등록
 app.include_router(auth.router)
 app.include_router(news.router)
 app.include_router(posts.router)
@@ -43,20 +41,23 @@ async def get_market_indices():
         ticker = yf.Ticker(symbol)
         data = ticker.history(period="2d")
         if len(data) < 2: continue
-        current = data['Close'].iloc[-1]
-        prev = data['Close'].iloc[-2]
-        change_pct = ((current - prev) / prev) * 100
+        
+        # 데이터를 반드시 파이썬 기본 타입으로 변환
+        current = float(data['Close'].iloc[-1])
+        prev = float(data['Close'].iloc[-2])
+        change_pct = float(((current - prev) / prev) * 100)
+        
         results.append({
             "name": name,
             "value": f"{current:,.2f}",
             "change": f"{change_pct:+.2f}%",
-            "isUp": change_pct >= 0,
+            "isUp": bool(change_pct >= 0),
             "nation": "🇰🇷" if "KOS" in name else "🇺🇸"
         })
     
     fx = yf.Ticker("KRW=X")
     fx_data = fx.history(period="1d")
-    fx_val = fx_data['Close'].iloc[-1]
+    fx_val = float(fx_data['Close'].iloc[-1])
     results.append({
         "name": "원·달러 환율 (USD/KRW)",
         "value": f"{fx_val:,.2f}",
