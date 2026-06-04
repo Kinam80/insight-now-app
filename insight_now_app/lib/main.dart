@@ -112,6 +112,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false, // 👈 이 설정을 반드시 추가하세요!
       backgroundColor: const Color(0xFF0B0C10),
       body: Center(
         child: Container(
@@ -183,6 +184,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: _isSubmitting
                     ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Color(0xFF111318), strokeWidth: 2))
                     : const Text('프리미엄 라운지 입장', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF111318))),
+              ),
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const RegisterScreen()));
+                },
+                child: const Text('아직 계정이 없으신가요? VIP 회원가입', 
+                  style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -836,3 +845,90 @@ class PostDetailScreen extends StatelessWidget {
     );
   }
 }
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
+  @override
+  State<RegisterScreen> createState() => _RegisterScreenState();
+}
+
+class _RegisterScreenState extends State<RegisterScreen> {
+  final TextEditingController _email = TextEditingController();
+  final TextEditingController _pass = TextEditingController();
+  final TextEditingController _nick = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    const inputDecoration = InputDecoration(
+      hintStyle: TextStyle(color: Colors.grey),
+      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+      focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
+    );
+
+    const textStyle = TextStyle(color: Colors.white);
+
+    return Scaffold(
+      resizeToAvoidBottomInset: false, // 키보드 올라올 때 UI 깨짐 방지
+      appBar: AppBar(
+        title: const Text('VIP 회원가입', style: TextStyle(color: Colors.white)),
+        backgroundColor: const Color(0xFF1E222D),
+      ),
+      backgroundColor: const Color(0xFF111318),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            TextField(controller: _email, style: textStyle, decoration: inputDecoration.copyWith(hintText: '이메일')),
+            TextField(controller: _pass, style: textStyle, obscureText: true, decoration: inputDecoration.copyWith(hintText: '비밀번호')),
+            TextField(controller: _nick, style: textStyle, decoration: inputDecoration.copyWith(hintText: '닉네임')),
+            const SizedBox(height: 30),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blueAccent,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () async {
+                  final res = await http.post(
+                    Uri.parse(ApiConstants.registerEndpoint),
+                    headers: {'Content-Type': 'application/json'},
+                    body: jsonEncode({
+                      'email': _email.text,
+                      'password': _pass.text,
+                      'nickname': _nick.text
+                    }),
+                  );
+                  if (!context.mounted) return;
+
+                  if (res.statusCode == 200) {
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) => AlertDialog(
+                        title: const Text('가입 완료'),
+                        content: const Text('회원가입이 완료되었습니다.\n로그인 화면으로 이동합니다.'),
+                        actions: [
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(context); // Dialog 닫기
+                              Navigator.pop(context); // 회원가입 화면 닫고 로그인 화면으로 복귀
+                            },
+                            child: const Text('확인'),
+                          ),
+                        ],
+                      ),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('가입 실패: ${res.body}')));
+                  }
+                },
+                child: const Text('가입 완료'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  } // <--- [1] build 메서드 닫는 괄호
+} // <--- [2] _RegisterScreenState 클래스 닫는 괄호 (이게 빠져있었습니다!)
