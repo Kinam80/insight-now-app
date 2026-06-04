@@ -1,11 +1,13 @@
 import os
 import yfinance as yf
+import time
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi.staticfiles import StaticFiles
 
+# 내부 모듈 임포트
 from app.routers import auth, news, posts, payments, admin
 from app.news_service import fetch_and_save_news
 
@@ -13,6 +15,7 @@ load_dotenv()
 
 app = FastAPI(title="Insight Now API", version="1.0.0")
 
+# CORS 설정
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,6 +24,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 라우터 등록
 app.include_router(auth.router)
 app.include_router(news.router)
 app.include_router(posts.router)
@@ -28,8 +32,11 @@ app.include_router(payments.router)
 app.include_router(admin.router)
 app.mount("/admin", StaticFiles(directory="app/static/admin", html=True), name="admin")
 
-@app.get("/market/indices")
-async def get_market_indices():
+# --- 시장 데이터 캐시 저장소 ---
+market_data_cache = {"data": [], "last_updated": 0}
+
+def fetch_market_data():
+    """실제 데이터를 수집하는 핵심 함수"""
     tickers = {
         "코스피 (KOSPI)": "^KS11",
         "코스닥 (KOSDAQ)": "^KQ11",
@@ -42,7 +49,6 @@ async def get_market_indices():
         data = ticker.history(period="2d")
         if len(data) < 2: continue
         
-        # 데이터를 반드시 파이썬 기본 타입으로 변환
         current = float(data['Close'].iloc[-1])
         prev = float(data['Close'].iloc[-2])
         change_pct = float(((current - prev) / prev) * 100)
@@ -67,10 +73,19 @@ async def get_market_indices():
     })
     return results
 
+@app.get("/market/indices")
+async def get_market_indices():
+    # 60초가 지났거나 데이터가 없을 때만 실시간 업데이트
+    if time.time() - market_data_cache["last_updated"] > 60 or not market_data_cache["data"]:
+        market_data_cache["data"] = fetch_market_data()
+        market_data_cache["last_updated"] = time.time()
+    return market_data_cache["data"]
+
 @app.get("/")
 def root():
     return {"message": "Insight Now API 서버 정상 작동 중 🚀"}
 
+# 스케줄러 설정
 scheduler = BackgroundScheduler()
 scheduler.add_job(fetch_and_save_news, "interval", hours=1)
 scheduler.start()
@@ -79,3 +94,6 @@ scheduler.start()
 async def startup_event():
     print("🚀 서버 시작 - 뉴스 및 실시간 시장 데이터 연동 완료!")
     fetch_and_save_news()
+    # 서버 시작 시 데이터 초기화
+    market_data_cache["data"] = fetch_market_data()
+    market_data_cache["last_updated"] = time.time()
