@@ -4,18 +4,18 @@ import time
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi.staticfiles import StaticFiles
+from apscheduler.schedulers.background import BackgroundScheduler
 
-# 내부 모듈 임포트
-from app.routers import auth, news, posts, payments, admin
+# --- 내부 모듈 임포트 ---
+from app.routers import auth, news, posts, payments, admin, chat  # chat 추가
 from app.news_service import fetch_and_save_news
 
 load_dotenv()
 
 app = FastAPI(title="Insight Now API", version="1.0.0")
 
-# CORS 설정
+# --- CORS 설정 ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,12 +24,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 라우터 등록
+# --- 라우터 등록 ---
 app.include_router(auth.router)
 app.include_router(news.router)
 app.include_router(posts.router)
 app.include_router(payments.router)
 app.include_router(admin.router)
+app.include_router(chat.router) # 채팅 라우터 등록
+
+# --- 정적 파일 마운트 ---
 app.mount("/admin", StaticFiles(directory="app/static/admin", html=True), name="admin")
 
 # --- 시장 데이터 캐시 저장소 ---
