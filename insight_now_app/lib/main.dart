@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:provider/provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'constants/api_constants.dart';
+import 'dart:async'; // 👈 이 줄을 추가하세요.
 
 void main() {
   runApp(
@@ -279,19 +280,53 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-// --- 📈 [1번 탭] 글로벌 금융 지수 실시간 시황판 ---
-class GlobalMarketIndexTab extends StatelessWidget {
+// --- 📈 [1번 탭] 글로벌 금융 지수 실시간 시황판 (30초 자동 갱신 적용) ---
+
+class GlobalMarketIndexTab extends StatefulWidget {
   const GlobalMarketIndexTab({super.key});
 
   @override
+  State<GlobalMarketIndexTab> createState() => _GlobalMarketIndexTabState();
+}
+
+class _GlobalMarketIndexTabState extends State<GlobalMarketIndexTab> {
+  Timer? _timer;
+  List<Map<String, dynamic>> _indices = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchMarketData();
+    // 30초마다 데이터 갱신
+    _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      _fetchMarketData();
+    });
+  }
+
+  Future<void> _fetchMarketData() async {
+    try {
+      final res = await http.get(Uri.parse('${ApiConstants.baseUrl}/market/indices'));
+      if (res.statusCode == 200 && mounted) {
+        setState(() {
+          _indices = List<Map<String, dynamic>>.from(jsonDecode(res.body));
+        });
+      }
+    } catch (e) {
+      debugPrint('데이터 수신 실패: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final List<Map<String, dynamic>> indices = [
-      {'name': '코스피 (KOSPI)', 'value': '2,684.52', 'change': '+1.24%', 'isUp': true, 'nation': '🇰🇷'},
-      {'name': '코스닥 (KOSDAQ)', 'value': '865.10', 'change': '-0.45%', 'isUp': false, 'nation': '🇰🇷'},
-      {'name': '나스닥 종합 (NASDAQ)', 'value': '16,920.72', 'change': '+2.11%', 'isUp': true, 'nation': '🇺🇸'},
-      {'name': 'S&P 500', 'value': '5,304.72', 'change': '+0.88%', 'isUp': true, 'nation': '🇺🇸'},
-      {'name': '원·달러 환율 (USD/KRW)', 'value': '1,372.50', 'change': '+4.20원', 'isUp': true, 'nation': '💱'},
-    ];
+    if (_indices.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -309,10 +344,10 @@ class GlobalMarketIndexTab extends StatelessWidget {
             mainAxisSpacing: 12,
             childAspectRatio: 1.4,
           ),
-          itemCount: indices.length,
+          itemCount: _indices.length,
           itemBuilder: (context, i) {
-            final idx = indices[i];
-            final color = idx['isUp'] ? Colors.redAccent : Colors.blueAccent;
+            final idx = _indices[i];
+            final color = (idx['isUp'] ?? true) ? Colors.redAccent : Colors.blueAccent;
             return Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -326,17 +361,29 @@ class GlobalMarketIndexTab extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(idx['nation'], style: const TextStyle(fontSize: 16)),
+                      Text(idx['nation'] ?? '', style: const TextStyle(fontSize: 16)),
                       const SizedBox(width: 6),
-                      Expanded(child: Text(idx['name'], style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+                      Expanded(
+                        child: Text(
+                          idx['name'] ?? '', 
+                          style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600), 
+                          overflow: TextOverflow.ellipsis
+                        ),
+                      ),
                     ],
                   ),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(idx['value'], style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+                      Text(
+                        idx['value'] ?? '0.00', 
+                        style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)
+                      ),
                       const SizedBox(height: 2),
-                      Text(idx['change'], style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.bold)),
+                      Text(
+                        idx['change'] ?? '0%', 
+                        style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.bold)
+                      ),
                     ],
                   )
                 ],
@@ -383,10 +430,16 @@ class _NewsTabState extends State<NewsTab> {
   bool _loading = true;
 
   @override
-  void initState() {
-    super.initState();
-    _fetchNews();
-  }
+  // 124번 줄 근처의 _NewsTabState 클래스 안
+@override
+void initState() {
+  super.initState();
+  _fetchNews(); 
+  // 👈 아래 4줄을 바로 밑에 넣으세요
+  Timer.periodic(const Duration(seconds: 30), (timer) {
+    if (mounted) _fetchNews();
+  });
+}
 
   Future<void> _fetchNews() async {
     try {
