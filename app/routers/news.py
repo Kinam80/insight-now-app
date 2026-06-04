@@ -28,7 +28,7 @@ def format_time_ago(iso_string: str) -> str:
             
         # 3. 🚨 타임존 보정 마법
         # Supabase DB에 저장된 시간(UTC)과 현재 한국 시간(KST)의 9시간 시차를 완벽하게 보정합니다.
-        dt = dt + timedelta(hours=9)
+        # dt = dt + timedelta(hours=9)
         
         # 4. 현재 한국 시간과의 최종 시차 계산
         now = datetime.now()
