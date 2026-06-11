@@ -1,6 +1,7 @@
 import os
 import time
 import math
+import asyncio
 from dotenv import load_dotenv
 import yfinance as yf
 from fastapi import FastAPI
@@ -104,10 +105,14 @@ scheduler.start()
 @app.on_event("startup")
 async def startup_event():
     print("🚀 서버 초기화 시작...")
+    # 비동기 태스크로 분리하여 서버 시작 시 타임아웃 방지
+    asyncio.create_task(background_init())
+
+async def background_init():
     try:
-        # 뉴스 및 지표 즉시 수집
-        fetch_and_save_news()
-        data = fetch_market_data()
+        # 뉴스 및 지표 수집을 루프 안에서 분리
+        await asyncio.to_thread(fetch_and_save_news)
+        data = await asyncio.to_thread(fetch_market_data)
         if data:
             market_data_cache["data"] = data
             market_data_cache["last_updated"] = time.time()
