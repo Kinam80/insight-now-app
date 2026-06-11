@@ -41,8 +41,7 @@ if os.path.exists("app/static/admin"):
 market_data_cache = {"data": [], "last_updated": 0}
 
 def fetch_market_data():
-    """실시간 시장 지표 수집 (최종 7대 핵심 지표)"""
-    # 딕셔너리 순서대로 데이터가 수집됩니다.
+    """데이터가 없는 경우를 완벽히 걸러내는 안전한 데이터 수집 함수"""
     tickers = {
         "코스피": "^KS11",
         "코스닥": "^KQ11",
@@ -53,20 +52,22 @@ def fetch_market_data():
     }
     results = []
     
-    try:
-        for name, symbol in tickers.items():
+    for name, symbol in tickers.items():
+        try:
             ticker = yf.Ticker(symbol)
-            data = ticker.history(period="2d")
-            if len(data) < 2: continue
+            data = ticker.history(period="5d") # 기간을 5일로 늘려 데이터 확보 확률 높임
+            
+            # 데이터가 비어있거나 부족하면 패스
+            if data.empty or len(data) < 2:
+                print(f"⚠️ {name} 데이터 부족, 건너뜀")
+                continue
             
             current = float(data['Close'].iloc[-1])
             prev = float(data['Close'].iloc[-2])
             change_pct = float(((current - prev) / prev) * 100)
             
-            # 국가 구분 로직
-            if "코스" in name: nation = "🇰🇷"
-            elif name in ["나스닥", "S&P 500"]: nation = "🇺🇸"
-            else: nation = "📊"
+            # 국가 구분
+            nation = "🇰🇷" if "코스" in name else ("🇺🇸" if name in ["나스닥", "S&P 500"] else "📊")
             
             results.append({
                 "name": name,
@@ -75,21 +76,24 @@ def fetch_market_data():
                 "isUp": bool(change_pct >= 0),
                 "nation": nation
             })
-        
-        # 환율 데이터 별도 추가
+        except Exception as e:
+            print(f"❌ {name} 수집 실패: {e}")
+            continue
+            
+    # 환율 추가
+    try:
         fx = yf.Ticker("KRW=X")
-        fx_data = fx.history(period="1d")
+        fx_data = fx.history(period="2d")
         if not fx_data.empty:
             fx_val = float(fx_data['Close'].iloc[-1])
             results.append({
                 "name": "원·달러 환율",
                 "value": f"{fx_val:,.2f}",
                 "change": "실시간",
-                "isUp": True, # 환율은 별도 로직으로 하거나 그대로 유지
+                "isUp": True,
                 "nation": "💱"
             })
-    except Exception as e:
-        print(f"❌ 시장 지표 수집 오류: {e}")
+    except: pass
         
     return results
 
