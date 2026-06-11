@@ -16,16 +16,17 @@ class PostCreate(BaseModel):
     tags: Optional[list] = []
     thumbnail_url: Optional[str] = None
 
-def get_current_user(authorization: str = None):
+def get_current_user(authorization: str = Header(default=None)):
+    print(f"DEBUG: 들어온 헤더값: {authorization}") # 로그에서 이 값을 확인!
     if not authorization:
         return None
+    
+    # "Bearer " 가 포함된 경우를 명확하게 처리
+    token = authorization.replace("Bearer ", "").strip()
+    
     try:
-        if authorization.startswith("Bearer "):
-            token = authorization[7:]
-        else:
-            token = authorization
         payload = decode_access_token(token)
-        print(f"✅ 토큰 디코딩 성공: {payload}")
+        print(f"✅ 토큰 디코딩 성공 결과: {payload}")
         return payload
     except Exception as e:
         print(f"❌ 토큰 디코딩 실패: {e}")

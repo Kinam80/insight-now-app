@@ -15,7 +15,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _selectedIndex = 0;
 
   final List<Widget> _screens = [
-    const GlobalMarketIndexTab(),
+    const MarketIndexTab(), // 👈 여기서 이름을 맞춰주세요!
     const NewsTab(),
     const EtfTab(),
     const GovStatsTab(),
