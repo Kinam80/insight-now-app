@@ -1,19 +1,19 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/market_index.dart'; 
-import '../constants/api_constants.dart'; 
+import '../models/market_index.dart';
+import '../constants/api_constants.dart';
 
 class ApiService {
   
   // [공통 헤더 로직] 토큰을 찾아서 헤더에 실어줍니다.
   static Future<Map<String, String>> _getHeaders() async {
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token'); // 저장된 토큰 가져오기
+    final token = prefs.getString('auth_token');
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token', // 토큰이 있으면 헤더 추가
+      if (token != null) 'Authorization': 'Bearer $token',
     };
   }
 
@@ -22,7 +22,7 @@ class ApiService {
     try {
       final response = await http.get(
         Uri.parse('${ApiConstants.baseUrl}/market/indices'),
-        headers: await _getHeaders(), // 수정: 헤더 포함
+        headers: await _getHeaders(),
       );
       
       if (response.statusCode == 200) {
@@ -35,20 +35,23 @@ class ApiService {
     return []; 
   }
 
-  // 2. 서버에서 게시글 전체 데이터를 가져오는 함수
+  // 2. 서버에서 게시글 전체 데이터를 가져오는 함수 (완벽하게 복구함)
   static Future<List<dynamic>> fetchPosts() async {
     try {
       final response = await http.get(
         Uri.parse(ApiConstants.postsEndpoint),
-        headers: await _getHeaders(), // 수정: 헤더 포함
+        headers: await _getHeaders(),
       );
       
       if (response.statusCode == 200) {
+        // utf8.decode로 한글 깨짐 방지
         final dynamic body = json.decode(utf8.decode(response.bodyBytes));
         
+        // 서버 응답이 {"posts": [...]} 형태일 경우
         if (body is Map && body.containsKey('posts')) {
           return body['posts'];
         }
+        // 서버 응답이 바로 리스트인 경우
         return body is List ? body : [];
       } else {
         print("❌ 서버 응답 오류: ${response.statusCode}");

@@ -38,7 +38,7 @@ def get_posts(authorization: Optional[str] = Header(default=None)):
     user = get_current_user(authorization)
 
     result = supabase.table("analysis_posts")\
-        .select("id, title, preview, access_type, single_price, tags, thumbnail_url, view_count, published_at")\
+        .select("id, title, preview, category, access_type, single_price, tags, thumbnail_url, view_count, published_at")\
         .eq("is_published", True)\
         .order("published_at", desc=True)\
         .execute()

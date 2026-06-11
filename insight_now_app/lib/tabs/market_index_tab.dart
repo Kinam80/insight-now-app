@@ -129,16 +129,22 @@ class _MarketIndexTabState extends State<MarketIndexTab> with SingleTickerProvid
     return FutureBuilder<List<dynamic>>(
       future: _allPosts,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: goldAccent));
-        if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text("데이터가 없습니다.", style: TextStyle(color: Colors.white54)));
+        if (snapshot.connectionState == ConnectionState.waiting) 
+          return const Center(child: CircularProgressIndicator(color: goldAccent));
+        if (!snapshot.hasData || snapshot.data!.isEmpty) 
+          return const Center(child: Text("데이터가 없습니다.", style: TextStyle(color: Colors.white54)));
 
-        // [필터링 로직 포함] 서버에서 가져온 전체 데이터 중 category가 일치하는 것만 추출
         final data = snapshot.data!.where((item) {
-          final category = item['category'] ?? '';
+          final category = (item['category'] ?? '').toString().trim();
+          
+          if (type == "레포트") return category == "레포트"; 
+          if (type == "기초 지식") return category == "기초지식"; 
+          
           return category == type;
         }).toList();
 
-        if (data.isEmpty) return const Center(child: Text("해당 카테고리에 글이 없습니다.", style: TextStyle(color: Colors.white54)));
+        if (data.isEmpty) 
+          return Center(child: Text("$type 카테고리에 글이 없습니다.", style: const TextStyle(color: Colors.white54)));
 
         return ListView.separated(
           padding: const EdgeInsets.all(16),
