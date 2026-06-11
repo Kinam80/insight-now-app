@@ -1,6 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/market_index.dart';
 import '../services/api_service.dart';
+
+// 고급스러운 다크 테마 색상
+const Color backgroundColor = Color(0xFF0A192F); // 딥 네이비
+const Color cardColor = Color(0xFF172A45); // 카드 배경색
+const Color goldAccent = Color(0xFFD4AF37); // 골드 포인트
 
 class MarketIndexTab extends StatefulWidget {
   const MarketIndexTab({super.key});
@@ -11,125 +17,176 @@ class MarketIndexTab extends StatefulWidget {
 
 class _MarketIndexTabState extends State<MarketIndexTab> with SingleTickerProviderStateMixin {
   late Future<List<MarketIndex>> _marketData;
+  late Future<List<dynamic>> _allPosts;
   late TabController _tabController;
+  
+  // 부드러운 스크롤을 위한 컨트롤러
+  final ScrollController _scrollController = ScrollController();
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
     _marketData = ApiService.fetchMarketIndices();
+    _allPosts = ApiService.fetchPosts();
     _tabController = TabController(length: 2, vsync: this);
+
+    // 0.05초마다 1픽셀씩 이동하는 기차 스크롤
+    _timer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      if (_scrollController.hasClients) {
+        double maxScroll = _scrollController.position.maxScrollExtent;
+        double currentScroll = _scrollController.offset;
+        if (currentScroll >= maxScroll) {
+          _scrollController.jumpTo(0);
+        } else {
+          _scrollController.jumpTo(currentScroll + 1.0);
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: backgroundColor,
       body: SafeArea(
-        child: Column(
-          children: [
-            // 1. 시장 지표 슬라이더
-            SizedBox(
-              height: 120,
-              child: FutureBuilder<List<MarketIndex>>(
-                future: _marketData,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                  if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text("지수 데이터 없음"));
-                  return ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    itemCount: snapshot.data!.length,
-                    itemBuilder: (context, index) => _buildMarketCard(snapshot.data![index]),
-                  );
-                },
+        child: Padding(
+          padding: const EdgeInsets.only(top: 40.0),
+          child: Column(
+            children: [
+              // [부드럽게 흐르는 지수 카드 영역]
+              SizedBox(
+                height: 120,
+                child: FutureBuilder<List<MarketIndex>>(
+                  future: _marketData,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: goldAccent));
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text("지수 데이터 없음", style: TextStyle(color: Colors.white)));
+                    
+                    return ListView.builder(
+                      controller: _scrollController,
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      itemBuilder: (context, index) {
+                        final item = snapshot.data![index % snapshot.data!.length];
+                        return _buildMarketCard(item);
+                      },
+                    );
+                  },
+                ),
               ),
-            ),
-            
-            // 2. 탭 바 (레포트 vs 기초 지식)
-            TabBar(
-              controller: _tabController,
-              labelColor: Colors.black87,
-              unselectedLabelColor: Colors.grey,
-              indicatorColor: Colors.amber,
-              indicatorWeight: 3,
-              tabs: const [Tab(text: "일일 레포트"), Tab(text: "기초 지식")],
-            ),
-            
-            // 3. 내용 영역
-            Expanded(
-              child: TabBarView(
+              
+              const SizedBox(height: 30),
+              
+              // [고급스러운 헤더 문구]
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    children: [
+                      Icon(Icons.diamond, color: goldAccent),
+                      SizedBox(width: 10),
+                      Text("권기태 금융전문가 인사이트", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                    ],
+                  ),
+                ),
+              ),
+
+              TabBar(
                 controller: _tabController,
-                children: [
-                  _buildContentList("레포트"),
-                  _buildContentList("기초 지식"),
-                ],
+                labelColor: goldAccent,
+                unselectedLabelColor: Colors.white54,
+                indicatorColor: goldAccent,
+                indicatorWeight: 3,
+                tabs: const [Tab(text: "📜 일일 레포트"), Tab(text: "💡 기초 지식")],
               ),
-            ),
-          ],
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildContentList("레포트"),
+                    _buildContentList("기초 지식"),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // 게시판 리스트 생성기
   Widget _buildContentList(String type) {
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: 5,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        return Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)],
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: Colors.amber.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-                child: const Icon(Icons.auto_awesome, color: Colors.amber),
+    return FutureBuilder<List<dynamic>>(
+      future: _allPosts,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: goldAccent));
+        if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text("데이터가 없습니다.", style: TextStyle(color: Colors.white54)));
+
+        final data = snapshot.data!; 
+
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: data.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          itemBuilder: (context, index) {
+            final item = data[index];
+            return Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: cardColor, 
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: goldAccent.withOpacity(0.2)),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text("$type 콘텐츠 ${index + 1}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(height: 4),
-                    Text("전문가가 분석한 오늘의 핵심 포인트 미리보기...", style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                  ],
-                ),
+              child: Row(
+                children: [
+                  const Icon(Icons.auto_awesome, color: goldAccent),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(item['title'] ?? '제목 없음', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
+                        const SizedBox(height: 4),
+                        Text(item['preview'] ?? '', style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const Icon(Icons.chevron_right, color: Colors.grey),
-            ],
-          ),
+            );
+          },
         );
       },
     );
   }
 
-  // 지수 카드
   Widget _buildMarketCard(MarketIndex item) {
     return Container(
       width: 140,
-      margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+      margin: const EdgeInsets.only(right: 15),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))],
+        color: cardColor, 
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: goldAccent.withOpacity(0.3)),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Row(children: [Text(item.nation), const SizedBox(width: 4), Text(item.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))]),
-          const SizedBox(height: 8),
-          Text(item.value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-          Text(item.change, style: TextStyle(fontSize: 12, color: item.isUp ? Colors.red : Colors.blue, fontWeight: FontWeight.w500)),
+          Text(item.nation, style: const TextStyle(fontSize: 10, color: Colors.white54)),
+          Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+          const SizedBox(height: 5),
+          Text(item.value, style: TextStyle(color: item.isUp ? Colors.redAccent : Colors.blueAccent, fontWeight: FontWeight.bold)),
+          Text(item.change, style: TextStyle(color: item.isUp ? Colors.redAccent : Colors.blueAccent, fontSize: 11)),
         ],
       ),
     );

@@ -11,6 +11,7 @@ class PostCreate(BaseModel):
     title: str
     preview: str
     content: str
+    category: str  # 👈 여기를 추가하세요!
     access_type: str = "premium_only"
     single_price: Optional[int] = None
     tags: Optional[list] = []
@@ -139,6 +140,7 @@ def create_post(post: PostCreate, authorization: Optional[str] = Header(default=
         "title": post.title,
         "preview": post.preview,
         "content": post.content,
+        "category": post.category,  # 👈 여기를 추가하세요! (쉼표 잊지 마세요)
         "access_type": post.access_type,
         "single_price": post.single_price,
         "tags": post.tags,

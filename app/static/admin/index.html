@@ -495,7 +495,14 @@
                             <label>가격 (원)</label>
                             <input type="number" id="post-price" placeholder="9900" value="9900">
                         </div>
-
+                        
+                        <div class="form-group">
+                            <label>카테고리</label>
+                            <select id="post-category">
+                                <option value="레포트">일일 레포트</option>
+                                <option value="기초 지식">기초 지식</option>
+                            </select>
+                        </div>
                         <div class="form-group">
                             <label>태그</label>
                             <input type="text" id="post-tags" placeholder="쉼표로 구분 (예: 반도체,AI)">
@@ -722,6 +729,8 @@
         async function createPost() {
             const title = document.getElementById('post-title').value;
             const content = document.getElementById('post-content').value;
+            // 새로 추가한 카테고리 값 가져오기
+            const category = document.getElementById('post-category').value; 
 
             if (!title || !content) {
                 showAlert('제목과 본문을 입력해주세요', 'error');
@@ -739,6 +748,7 @@
                         title,
                         preview: document.getElementById('post-preview').value,
                         content,
+                        category: category, // 서버로 전송
                         access_type: document.getElementById('post-access').value,
                         single_price: document.getElementById('post-access').value === 'paid_single' 
                             ? parseInt(document.getElementById('post-price').value) 
@@ -748,6 +758,7 @@
 
                 if (res.ok) {
                     showAlert('✅ 글이 발행되었습니다!', 'success');
+                    // 입력 초기화
                     document.getElementById('post-title').value = '';
                     document.getElementById('post-preview').value = '';
                     document.getElementById('post-content').value = '';
