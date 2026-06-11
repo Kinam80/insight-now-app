@@ -41,12 +41,15 @@ if os.path.exists("app/static/admin"):
 market_data_cache = {"data": [], "last_updated": 0}
 
 def fetch_market_data():
-    """실제 yfinance 데이터를 수집하는 함수"""
+    """실시간 시장 지표 수집 (최종 7대 핵심 지표)"""
+    # 딕셔너리 순서대로 데이터가 수집됩니다.
     tickers = {
-        "코스피 (KOSPI)": "^KS11",
-        "코스닥 (KOSDAQ)": "^KQ11",
-        "나스닥 종합 (NASDAQ)": "^IXIC",
-        "S&P 500": "^GSPC"
+        "코스피": "^KS11",
+        "코스닥": "^KQ11",
+        "나스닥": "^IXIC",
+        "S&P 500": "^GSPC",
+        "공포지수(VIX)": "^VIX",
+        "미 10년물 국채": "^TNX"
     }
     results = []
     
@@ -60,28 +63,33 @@ def fetch_market_data():
             prev = float(data['Close'].iloc[-2])
             change_pct = float(((current - prev) / prev) * 100)
             
+            # 국가 구분 로직
+            if "코스" in name: nation = "🇰🇷"
+            elif name in ["나스닥", "S&P 500"]: nation = "🇺🇸"
+            else: nation = "📊"
+            
             results.append({
                 "name": name,
                 "value": f"{current:,.2f}",
                 "change": f"{change_pct:+.2f}%",
                 "isUp": bool(change_pct >= 0),
-                "nation": "🇰🇷" if "KOS" in name else "🇺🇸"
+                "nation": nation
             })
         
-        # 환율 데이터 수집
+        # 환율 데이터 별도 추가
         fx = yf.Ticker("KRW=X")
         fx_data = fx.history(period="1d")
         if not fx_data.empty:
             fx_val = float(fx_data['Close'].iloc[-1])
             results.append({
-                "name": "원·달러 환율 (USD/KRW)",
+                "name": "원·달러 환율",
                 "value": f"{fx_val:,.2f}",
                 "change": "실시간",
-                "isUp": True,
+                "isUp": True, # 환율은 별도 로직으로 하거나 그대로 유지
                 "nation": "💱"
             })
     except Exception as e:
-        print(f"❌ 시장 데이터 수집 오류: {e}")
+        print(f"❌ 시장 지표 수집 오류: {e}")
         
     return results
 
