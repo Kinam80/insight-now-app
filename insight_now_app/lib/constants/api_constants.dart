@@ -3,12 +3,17 @@ class ApiConstants {
   static const String baseUrl = 'https://insight-now-app.onrender.com';
   static const String wsUrl = 'wss://insight-now-app.onrender.com';
 
+  // --- 🆕 신규 탭용 API (Phase 2, 3, 4) ---
+  static const String newsEndpoint = '$baseUrl/news/';
+  static const String etfEndpoint = '$baseUrl/etfs';
+  static const String govStatsEndpoint = '$baseUrl/gov-stats';
+
+  // --- 기존 API ---
   // 인증 API
   static const String loginEndpoint = '$baseUrl/auth/login';
   static const String registerEndpoint = '$baseUrl/auth/register';
 
-  // 뉴스 API
-  static const String newsEndpoint = '$baseUrl/news/';
+  // 뉴스 관련 (기존 로직 유지)
   static const String newsLatestEndpoint = '$baseUrl/news/latest';
   static const String newsDetailEndpoint = '$baseUrl/news/';
 
