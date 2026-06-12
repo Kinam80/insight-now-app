@@ -539,8 +539,8 @@
                     <h3>➕ ETF 티커 등록/삭제</h3>
                     <div class="form-row">
                         <div class="form-group">
-                            <label>ETF 티커 입력 (예: SPY, QQQ)</label>
-                            <input type="text" id="etf-ticker-input" placeholder="티커 입력">
+                            <label>종목 코드 입력 (예: 232080)</label>
+                            <input type="text" id="etf-ticker-input" placeholder="6자리 종목 코드">
                         </div>
                         <div class="form-group" style="display: flex; gap: 10px; padding-top: 25px;">
                             <button onclick="addEtfRegistry()" style="background: #4CAF50;">등록</button>
@@ -557,7 +557,7 @@
                 <table id="etf-table">
                     <thead>
                         <tr>
-                            <th>티커</th>
+                            <th>종목 코드</th>
                             <th>현재가</th>
                             <th>비중(%)</th>
                             <th>최종 업데이트</th>
