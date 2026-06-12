@@ -1,6 +1,6 @@
 import yfinance as yf
 # 형님의 database.py 파일에서 생성한 supabase 클라이언트를 가져옵니다.
-from database import supabase 
+from app.database import supabase 
 
 def update_etf_data_by_ticker(ticker_symbol: str):
     """특정 티커의 정보를 수집하여 Supabase etf_data 테이블에 저장/갱신합니다."""
