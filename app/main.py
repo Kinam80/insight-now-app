@@ -1,22 +1,21 @@
-# --- 수정된 부분 ---
 import os
 import time
 import math
 import asyncio
 from dotenv import load_dotenv
 import yfinance as yf
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.background import BackgroundScheduler
+from pydantic import BaseModel
 
-# 여기를 app.services로 수정!
-from app.services.etf_service import update_etf_data_by_ticker, get_all_registered_tickers
+# 서비스 함수 임포트
+from app.services.etf_service import update_etf_data_by_ticker, get_all_registered_tickers, add_to_registry
 
-# --- 내부 모듈 임포트 ---
+# 내부 모듈 임포트
 from app.routers import auth, news, posts, payments, admin, chat
 from app.news_service import fetch_and_save_news
-# --------------------
 
 load_dotenv()
 
@@ -43,31 +42,29 @@ app.include_router(chat.router)
 if os.path.exists("app/static/admin"):
     app.mount("/admin", StaticFiles(directory="app/static/admin", html=True), name="admin")
 
+# --- 종목 등록용 데이터 모델 ---
+class EtfRegistration(BaseModel):
+    ticker: str
+    weight: float
+
 # --- 시장 데이터 캐시 ---
 market_data_cache = {"data": [], "last_updated": 0}
 
 def fetch_market_data():
-    """데이터 무결성(NaN 체크)이 강화된 시장 데이터 수집"""
     tickers = {
         "코스피": "^KS11", "코스닥": "^KQ11", "나스닥": "^IXIC",
         "S&P 500": "^GSPC", "공포지수(VIX)": "^VIX", "미 10년물 국채": "^TNX"
     }
     results = []
-    
     for name, symbol in tickers.items():
         try:
             ticker = yf.Ticker(symbol)
             data = ticker.history(period="5d")
-            
-            # 1. 데이터 존재 여부 및 NaN 체크
             if data.empty or len(data) < 2: continue
             current = float(data['Close'].iloc[-1])
             prev = float(data['Close'].iloc[-2])
-            
             if math.isnan(current) or math.isnan(prev): continue
-            
             change_pct = ((current - prev) / prev) * 100
-            
             results.append({
                 "name": name,
                 "value": f"{current:,.2f}",
@@ -76,8 +73,6 @@ def fetch_market_data():
                 "nation": "🇰🇷" if "코스" in name else ("🇺🇸" if name in ["나스닥", "S&P 500"] else "📊")
             })
         except Exception: continue
-            
-    # 환율 추가
     try:
         fx = yf.Ticker("KRW=X")
         fx_data = fx.history(period="2d")
@@ -87,16 +82,36 @@ def fetch_market_data():
                 "change": "실시간", "isUp": True, "nation": "💱"
             })
     except: pass
-        
     return results
 
 @app.get("/market/indices")
 async def get_market_indices():
-    # 60초 캐시 로직
     if time.time() - market_data_cache["last_updated"] > 60 or not market_data_cache["data"]:
         market_data_cache["data"] = fetch_market_data()
         market_data_cache["last_updated"] = time.time()
     return market_data_cache["data"]
+
+# --- ETF 관리 API (등록 및 업데이트) ---
+
+@app.post("/etf/register")
+async def register_etf(data: EtfRegistration):
+    """새 종목번호를 등록하고 즉시 데이터를 갱신합니다."""
+    try:
+        add_to_registry(data.ticker, data.weight)
+        update_res = update_etf_data_by_ticker(data.ticker)
+        return {"message": "등록 및 업데이트 완료", "ticker": data.ticker, "result": update_res}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/admin/update-etf")
+async def trigger_etf_update():
+    """모든 등록된 종목번호를 한 번에 업데이트합니다."""
+    tickers = get_all_registered_tickers()
+    results = []
+    for ticker in tickers:
+        res = update_etf_data_by_ticker(ticker)
+        results.append({"ticker": ticker, "result": res})
+    return {"message": "업데이트 완료", "details": results}
 
 @app.get("/")
 def root():
@@ -110,12 +125,10 @@ scheduler.start()
 @app.on_event("startup")
 async def startup_event():
     print("🚀 서버 초기화 시작...")
-    # 비동기 태스크로 분리하여 서버 시작 시 타임아웃 방지
     asyncio.create_task(background_init())
 
 async def background_init():
     try:
-        # 뉴스 및 지표 수집을 루프 안에서 분리
         await asyncio.to_thread(fetch_and_save_news)
         data = await asyncio.to_thread(fetch_market_data)
         if data:
@@ -124,15 +137,3 @@ async def background_init():
         print("✅ 초기 데이터 로드 완료")
     except Exception as e:
         print(f"⚠️ 초기화 중 경고: {e}")
-# API 엔드포인트 추가 (관리자 페이지에서 이 URL을 호출할 겁니다)
-@app.post("/admin/update-etf")
-async def trigger_etf_update():
-    """모든 등록된 ETF를 한 번에 업데이트하는 API"""
-    tickers = get_all_registered_tickers()
-    results = []
-    
-    for ticker in tickers:
-        res = update_etf_data_by_ticker(ticker)
-        results.append({"ticker": ticker, "result": res})
-        
-    return {"message": "업데이트 완료", "details": results}        
