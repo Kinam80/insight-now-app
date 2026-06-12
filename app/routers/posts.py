@@ -150,3 +150,23 @@ def create_post(post: PostCreate, authorization: Optional[str] = Header(default=
     }).execute()
 
     return {"message": "글 발행 완료!", "post": result.data[0]}
+
+@router.delete("/{post_id}")
+def delete_post(post_id: str, authorization: Optional[str] = Header(default=None)):
+    user = get_current_user(authorization)
+    
+    # 관리자 권한 확인
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="삭제 권한이 없습니다.")
+
+    # Supabase에서 데이터 삭제
+    result = supabase.table("analysis_posts")\
+        .delete()\
+        .eq("id", post_id)\
+        .execute()
+    
+    # 결과 확인
+    if not result.data:
+        raise HTTPException(status_code=404, detail="삭제할 글을 찾을 수 없습니다.")
+        
+    return {"message": "글이 성공적으로 삭제되었습니다."}

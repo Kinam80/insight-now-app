@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // 실시간 기능을 위해 추가
 import '../models/market_index.dart';
 import '../services/api_service.dart';
+import '../screens/detail_screen.dart'; // 상세 페이지 연결을 위해 추가함
 
 // 고급스러운 다크 테마 색상
 const Color backgroundColor = Color(0xFF0A192F); // 딥 네이비
@@ -17,18 +19,22 @@ class MarketIndexTab extends StatefulWidget {
 
 class _MarketIndexTabState extends State<MarketIndexTab> with SingleTickerProviderStateMixin {
   late Future<List<MarketIndex>> _marketData;
-  late Future<List<dynamic>> _allPosts;
   late TabController _tabController;
   
   // 부드러운 스크롤을 위한 컨트롤러
   final ScrollController _scrollController = ScrollController();
   Timer? _timer;
 
+  // [실시간 핵심] 데이터를 계속 감시하는 스트림
+  final Stream<List<Map<String, dynamic>>> _postsStream = Supabase.instance.client
+      .from('analysis_posts')
+      .stream(primaryKey: ['id'])
+      .order('created_at', ascending: false);
+
   @override
   void initState() {
     super.initState();
     _marketData = ApiService.fetchMarketIndices();
-    _allPosts = ApiService.fetchPosts();
     _tabController = TabController(length: 2, vsync: this);
 
     // 0.05초마다 1픽셀씩 이동하는 기차 스크롤
@@ -126,20 +132,17 @@ class _MarketIndexTabState extends State<MarketIndexTab> with SingleTickerProvid
   }
 
   Widget _buildContentList(String type) {
-    return FutureBuilder<List<dynamic>>(
-      future: _allPosts,
+    // [핵심] 기존 FutureBuilder에서 StreamBuilder로 변경
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _postsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) 
           return const Center(child: CircularProgressIndicator(color: goldAccent));
-        if (!snapshot.hasData || snapshot.data!.isEmpty) 
+        if (!snapshot.hasData) 
           return const Center(child: Text("데이터가 없습니다.", style: TextStyle(color: Colors.white54)));
 
         final data = snapshot.data!.where((item) {
           final category = (item['category'] ?? '').toString().trim();
-          
-          if (type == "레포트") return category == "레포트"; 
-          if (type == "기초 지식") return category == "기초지식"; 
-          
           return category == type;
         }).toList();
 
@@ -152,28 +155,39 @@ class _MarketIndexTabState extends State<MarketIndexTab> with SingleTickerProvid
           separatorBuilder: (_, __) => const SizedBox(height: 12),
           itemBuilder: (context, index) {
             final item = data[index];
-            return Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: cardColor, 
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: goldAccent.withOpacity(0.2)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.auto_awesome, color: goldAccent),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(item['title'] ?? '제목 없음', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
-                        const SizedBox(height: 4),
-                        Text(item['preview'] ?? '', style: const TextStyle(fontSize: 12, color: Colors.white60)),
-                      ],
-                    ),
+            return InkWell(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => DetailScreen(postId: item['id']),
                   ),
-                ],
+                );
+              },
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: cardColor, 
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: goldAccent.withOpacity(0.2)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.auto_awesome, color: goldAccent),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(item['title'] ?? '제목 없음', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
+                          const SizedBox(height: 4),
+                          Text(item['preview'] ?? '', style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           },
