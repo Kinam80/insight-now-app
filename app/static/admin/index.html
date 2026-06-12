@@ -1061,7 +1061,7 @@
 
             try {
                 // 2. 서버의 새로운 '/etf/register' 엔드포인트 호출
-                const response = await fetch('/etf/register', {
+                const response = await fetch(`${API_BASE}/etf/register`, {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',

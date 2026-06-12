@@ -123,7 +123,16 @@ async def trigger_etf_update():
         res = update_etf_data_by_ticker(ticker)
         results.append({"ticker": ticker, "result": res})
     return {"message": "업데이트 완료", "details": results}
-
+# 삭제 기능을 위한 엔드포인트 추가
+@app.delete("/etf/unregister/{ticker}")
+async def unregister_etf(ticker: str):
+    """지정된 종목번호를 레지스트리에서 삭제합니다."""
+    try:
+        # Supabase에서 해당 ticker를 삭제하는 로직
+        response = supabase.table("etf_registry").delete().eq("ticker", ticker).execute()
+        return {"message": f"{ticker} 삭제 완료", "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 @app.get("/")
 def root():
     return {"message": "Insight Now API 서버 정상 작동 중 🚀"}
