@@ -26,3 +26,18 @@ def get_all_registered_tickers():
     """etf_registry 테이블에서 사용 중(is_active=True)인 티커 목록만 가져옵니다."""
     response = supabase.table("etf_registry").select("ticker").eq("is_active", True).execute()
     return [item['ticker'] for item in response.data]
+
+def add_to_registry(ticker: str, weight: float):
+    """etf_registry 테이블에 티커와 비중을 등록하거나 업데이트합니다."""
+    try:
+        data = {
+            "ticker": ticker,
+            "weight": weight,
+            "is_active": True
+        }
+        # etf_registry 테이블에 upsert (중복 시 업데이트)
+        response = supabase.table("etf_registry").upsert(data).execute()
+        return {"status": "success", "data": response.data}
+    except Exception as e:
+        print(f"Error adding to registry: {e}")
+        return {"status": "error", "message": str(e)}

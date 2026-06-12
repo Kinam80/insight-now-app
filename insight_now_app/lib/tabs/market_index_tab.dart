@@ -26,10 +26,11 @@ class _MarketIndexTabState extends State<MarketIndexTab> with SingleTickerProvid
   Timer? _timer;
 
   // [실시간 핵심] 데이터를 계속 감시하는 스트림
+  // [수정 후 - 훨씬 명확하게 전체 테이블 변경 감지]
   final Stream<List<Map<String, dynamic>>> _postsStream = Supabase.instance.client
       .from('analysis_posts')
       .stream(primaryKey: ['id'])
-      .order('created_at', ascending: false);
+      .order('published_at', ascending: false); // order는 여기서 유지
 
   @override
   void initState() {
