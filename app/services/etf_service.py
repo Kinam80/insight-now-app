@@ -4,17 +4,24 @@ from app.database import supabase
 
 def update_etf_data_by_ticker(ticker_symbol: str):
     """특정 티커의 정보를 수집하여 Supabase etf_data 테이블에 저장/갱신합니다."""
+    # [수정] 한국 주식 티커 처리: .KS나 .KQ가 없으면 .KS를 자동으로 붙임
+    search_ticker = ticker_symbol
+    if not any(x in search_ticker for x in [".KS", ".KQ"]):
+        search_ticker = f"{search_ticker}.KS"
+        
     try:
-        ticker = yf.Ticker(ticker_symbol)
+        ticker = yf.Ticker(search_ticker)
         info = ticker.info
         
+        # 'regularMarketPrice'가 없으면 'currentPrice'로 시도 (데이터 안정성 향상)
+        price = info.get("regularMarketPrice") or info.get("currentPrice")
+        
         data_to_save = {
-            "ticker": ticker_symbol,
-            "price": info.get("regularMarketPrice"),
+            "ticker": ticker_symbol, # DB에는 원본 ticker 번호 저장
+            "price": price,
             "description": info.get("longBusinessSummary"),
         }
         
-        # upsert 사용 시 ticker 컬럼이 etf_data 테이블의 유니크 키여야 합니다.
         response = supabase.table("etf_data").upsert(data_to_save).execute()
         return {"status": "success", "data": response.data}
     
