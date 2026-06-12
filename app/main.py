@@ -1,3 +1,4 @@
+# --- 수정된 부분 ---
 import os
 import time
 import math
@@ -8,12 +9,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.background import BackgroundScheduler
-# main.py 상단에 추가
-from services.etf_service import update_etf_data_by_ticker, get_all_registered_tickers
+
+# 여기를 app.services로 수정!
+from app.services.etf_service import update_etf_data_by_ticker, get_all_registered_tickers
 
 # --- 내부 모듈 임포트 ---
 from app.routers import auth, news, posts, payments, admin, chat
 from app.news_service import fetch_and_save_news
+# --------------------
 
 load_dotenv()
 

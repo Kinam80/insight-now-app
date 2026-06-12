@@ -1,22 +1,17 @@
-import yfinance as yf
-import json
+from etf_service import update_etf_data_by_ticker, get_all_registered_tickers
 
-def test_fetch():
-    # SOL AI반도체 소부장 ETF 티커
-    ticker = yf.Ticker("294870.KS")
-    info = ticker.info
+def test_flow():
+    print("--- 테스트 시작 ---")
+    # 1. 관리 대상 티커 목록 가져오기 테스트
+    tickers = get_all_registered_tickers()
+    print(f"등록된 티커: {tickers}")
     
-    # 우리가 필요한 핵심 데이터만 쏙 뽑아봅니다.
-    data = {
-        "종목명": info.get("shortName"),
-        "현재가": info.get("regularMarketPrice"),
-        "설명": info.get("longBusinessSummary"),
-        "통화": info.get("currency"),
-        "전체 데이터 샘플": info # 이걸 보면 다른 어떤 정보가 있는지 다 알 수 있습니다.
-    }
-    
-    # 보기 좋게 출력
-    print(json.dumps(data, indent=4, ensure_ascii=False))
+    # 2. 첫 번째 티커만 실제 수집/갱신 테스트
+    if tickers:
+        test_ticker = tickers[0]
+        print(f"수집 테스트: {test_ticker}")
+        result = update_etf_data_by_ticker(test_ticker)
+        print(f"결과: {result}")
 
 if __name__ == "__main__":
-    test_fetch()
+    test_flow()
