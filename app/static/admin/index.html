@@ -1050,7 +1050,7 @@
             if (!ticker) return showAlert('티커를 입력하세요', 'error');
 
             try {
-                const res = await fetch(`${API_BASE}/etf/register`, {
+                const response = await fetch('/admin/update-etf', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
@@ -1058,7 +1058,7 @@
                     },
                     body: JSON.stringify({ ticker })
                 });
-                if (res.ok) {
+                if (response.ok) {
                     showAlert('✅ 등록 완료! 데이터를 갱신해주세요.', 'success');
                     document.getElementById('etf-ticker-input').value = '';
                     loadEtfRegistry();
