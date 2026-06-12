@@ -416,7 +416,7 @@
             <div class="nav-tabs">
                 <button class="active" onclick="switchTab('dashboard')">📊 대시보드</button>
                 <button onclick="switchTab('posts')">📝 글 관리</button>
-                <button onclick="switchTab('keywords')">🔑 키워드 관리</button>
+                <button onclick="switchTab('etf')">📈 ETF 관리</button> <button onclick="switchTab('keywords')">🔑 키워드 관리</button>
                 <button onclick="switchTab('customers')">👥 고객 관리</button>
                 <button onclick="switchTab('payments')">💳 결제 통계</button>
             </div>
@@ -530,8 +530,45 @@
                     </tbody>
                 </table>
             </div>
+            
+            <div id="etf" class="section">
+                <h2>📈 ETF 관리</h2>
 
-            <!-- ===== 키워드 관리 섹션 ===== -->
+                <div style="background: #111318; padding: 20px; border-radius: 10px; margin-bottom: 30px;">
+                    <h3>➕ ETF 티커 등록/삭제</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>ETF 티커 입력 (예: SPY, QQQ)</label>
+                            <input type="text" id="etf-ticker-input" placeholder="티커 입력">
+                        </div>
+                        <div class="form-group" style="display: flex; gap: 10px; padding-top: 25px;">
+                            <button onclick="addEtfRegistry()" style="background: #4CAF50;">등록</button>
+                            <button onclick="removeEtfRegistry()" style="background: #f44336;">삭제</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3>📋 ETF 상세 데이터 현황</h3>
+                    <button onclick="updateEtfData()" style="width: 200px;">🔄 데이터 강제 업데이트</button>
+                </div>
+
+                <table id="etf-table">
+                    <thead>
+                        <tr>
+                            <th>티커</th>
+                            <th>현재가</th>
+                            <th>비중(%)</th>
+                            <th>최종 업데이트</th>
+                            <th>작업</th>
+                        </tr>
+                    </thead>
+                    <tbody id="etf-data-list">
+                        <tr><td colspan="5" style="text-align:center;color:#aaa;">데이터 로딩 중...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+                        <!-- ===== 키워드 관리 섹션 ===== -->
             <div id="keywords" class="section">
                 <h2>🔑 뉴스 키워드 관리</h2>
 
@@ -977,6 +1014,88 @@
                 console.error('대시보드 로드 실패', error);
             }
         }
+        // ===== ETF 관리 함수 =====
+        async function loadEtfRegistry() {
+            try {
+                const res = await fetch(`${API_BASE}/etf/list`, {
+                    headers: { 'authorization': `Bearer ${currentToken}` }
+                });
+                const data = await res.json();
+                const tbody = document.getElementById('etf-data-list');
+                
+                if (!data.etfs || data.etfs.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#aaa;">등록된 ETF가 없습니다</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.etfs.map(etf => `
+                    <tr>
+                        <td>${etf.ticker}</td>
+                        <td>₩${(etf.price || 0).toLocaleString('ko-KR')}</td>
+                        <td>${etf.weight || 0}%</td>
+                        <td>${etf.updated_at ? new Date(etf.updated_at).toLocaleString('ko-KR') : '-'}</td>
+                        <td>
+                            <button class="danger" onclick="removeEtfRegistry('${etf.ticker}')" style="padding:5px 10px;font-size:12px;">삭제</button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error('ETF 목록 로드 실패', error);
+            }
+        }
+
+        async function addEtfRegistry() {
+            const ticker = document.getElementById('etf-ticker-input').value.toUpperCase().trim();
+            if (!ticker) return showAlert('티커를 입력하세요', 'error');
+
+            try {
+                const res = await fetch(`${API_BASE}/etf/register`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'authorization': `Bearer ${currentToken}` 
+                    },
+                    body: JSON.stringify({ ticker })
+                });
+                if (res.ok) {
+                    showAlert('✅ 등록 완료! 데이터를 갱신해주세요.', 'success');
+                    document.getElementById('etf-ticker-input').value = '';
+                    loadEtfRegistry();
+                }
+            } catch (error) {
+                showAlert('등록 실패', 'error');
+            }
+        }
+
+        async function removeEtfRegistry(ticker) {
+            if (!confirm(`${ticker}를 삭제하시겠습니까?`)) return;
+            try {
+                await fetch(`${API_BASE}/etf/unregister/${ticker}`, {
+                    method: 'DELETE',
+                    headers: { 'authorization': `Bearer ${currentToken}` }
+                });
+                showAlert('삭제되었습니다', 'success');
+                loadEtfRegistry();
+            } catch (error) {
+                showAlert('삭제 실패', 'error');
+            }
+        }
+
+        async function updateEtfData() {
+            showAlert('데이터 업데이트 중...', 'success');
+            try {
+                const res = await fetch(`${API_BASE}/admin/update-etf`, {
+                    method: 'POST',
+                    headers: { 'authorization': `Bearer ${currentToken}` }
+                });
+                if (res.ok) {
+                    showAlert('✅ 최신 데이터로 갱신되었습니다!', 'success');
+                    loadEtfRegistry();
+                }
+            } catch (error) {
+                showAlert('업데이트 실패', 'error');
+            }
+        }
 
         // ===== 초기화 =====
         window.addEventListener('load', () => {
@@ -991,3 +1110,4 @@
     </script>
 </body>
 </html>
+       
