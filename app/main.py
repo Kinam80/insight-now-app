@@ -9,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.background import BackgroundScheduler
 from pydantic import BaseModel
+# 기존 import문들 아래에 추가
+from app.database import supabase
 
 # 서비스 함수 임포트
 from app.services.etf_service import update_etf_data_by_ticker, get_all_registered_tickers, add_to_registry
@@ -102,7 +104,16 @@ async def register_etf(data: EtfRegistration):
         return {"message": "등록 및 업데이트 완료", "ticker": data.ticker, "result": update_res}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
+@app.get("/etf/list")
+async def get_etf_list():
+    """등록된 모든 ETF 목록을 가져옵니다."""
+    try:
+        # Supabase에서 데이터 조회
+        response = supabase.table("etf_registry").select("*").eq("is_active", True).execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
 @app.post("/admin/update-etf")
 async def trigger_etf_update():
     """모든 등록된 종목번호를 한 번에 업데이트합니다."""
