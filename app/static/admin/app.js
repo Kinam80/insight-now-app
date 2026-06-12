@@ -319,6 +319,7 @@ async function loadDashboard() {
         loadPosts();
         loadCustomers();
         loadKeywords();
+        loadEtfList(); // <--- 이 한 줄만 추가하세요!
     } catch (error) {
         console.error('대시보드 로드 실패', error);
     }
@@ -334,3 +335,95 @@ window.addEventListener('load', () => {
         loadDashboard();
     }
 });
+
+// ===== ETF 관리 기능 추가 =====
+
+async function loadEtfList() {
+    try {
+        const res = await fetch(`${API_BASE}/admin/etfs`, { 
+            headers: { 'authorization': `Bearer ${currentToken}` } 
+        });
+        const etfs = await res.json();
+        const listEl = document.getElementById('etf-list');
+        
+        if (!etfs || etfs.length === 0) {
+            listEl.innerHTML = '<p style="color:#aaa; text-align:center; padding:10px;">관리 중인 종목이 없습니다.</p>';
+            return;
+        }
+
+        listEl.innerHTML = etfs.map(etf => `
+            <div class="keyword-tag" style="justify-content: space-between; margin-bottom: 5px;">
+                ${etf.ticker}
+                <button onclick="deleteEtf('${etf.ticker}')" style="background:none; border:none; cursor:pointer;">✕</button>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('ETF 목록 로드 실패', error);
+    }
+}
+
+async function addEtf() {
+    const input = document.getElementById('new-etf-ticker');
+    const ticker = input.value.trim().toUpperCase();
+    if (!ticker) return showAlert('티커를 입력해주세요', 'error');
+
+    try {
+        const res = await fetch(`${API_BASE}/admin/etfs`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'authorization': `Bearer ${currentToken}` 
+            },
+            body: JSON.stringify({ ticker })
+        });
+
+        if (res.ok) {
+            input.value = '';
+            showAlert('✅ ETF가 추가되었습니다', 'success');
+            loadEtfList();
+        } else {
+            showAlert('추가 실패', 'error');
+        }
+    } catch (error) {
+        showAlert('오류 발생', 'error');
+    }
+}
+
+async function deleteEtf(ticker) {
+    if (!confirm(`${ticker} 종목을 삭제하시겠습니까?`)) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/admin/etfs/${ticker}`, {
+            method: 'DELETE',
+            headers: { 'authorization': `Bearer ${currentToken}` }
+        });
+
+        if (res.ok) {
+            showAlert('삭제되었습니다', 'success');
+            loadEtfList();
+        }
+    } catch (error) {
+        showAlert('삭제 실패', 'error');
+    }
+}
+
+async function updateAllEtfData() {
+    const statusEl = document.getElementById('etf-status');
+    statusEl.textContent = '수집 중...';
+    
+    try {
+        const res = await fetch(`${API_BASE}/admin/update-etf`, { 
+            method: 'POST',
+            headers: { 'authorization': `Bearer ${currentToken}` }
+        });
+        
+        if (res.ok) {
+            statusEl.textContent = '✅ 업데이트 성공!';
+            setTimeout(() => statusEl.textContent = '', 3000);
+        } else {
+            statusEl.textContent = '업데이트 실패';
+        }
+    } catch (error) {
+        statusEl.textContent = '오류 발생';
+    }
+}

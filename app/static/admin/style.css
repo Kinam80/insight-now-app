@@ -430,3 +430,29 @@ tbody tr:hover {
         font-size: 14px;
     }
 }
+/* ===== ETF 데이터 관리 구역 (추가) ===== */
+.etf-section {
+    background: #1e222d;
+    padding: 25px;
+    border-radius: 10px;
+    border: 1px solid #ffa500;
+    margin-top: 30px;
+    margin-bottom: 30px;
+}
+
+.etf-section h2 {
+    border-bottom: 1px solid #ffa500;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+.etf-status {
+    text-align: center;
+    margin-top: 15px;
+    font-size: 14px;
+    color: #ffa500;
+    font-weight: 600;
+    padding: 10px;
+    background: #111318;
+    border-radius: 5px;
+}
