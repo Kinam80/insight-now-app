@@ -8,6 +8,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.background import BackgroundScheduler
+# main.py 상단에 추가
+from services.etf_service import update_etf_data_by_ticker, get_all_registered_tickers
 
 # --- 내부 모듈 임포트 ---
 from app.routers import auth, news, posts, payments, admin, chat
@@ -119,3 +121,15 @@ async def background_init():
         print("✅ 초기 데이터 로드 완료")
     except Exception as e:
         print(f"⚠️ 초기화 중 경고: {e}")
+# API 엔드포인트 추가 (관리자 페이지에서 이 URL을 호출할 겁니다)
+@app.post("/admin/update-etf")
+async def trigger_etf_update():
+    """모든 등록된 ETF를 한 번에 업데이트하는 API"""
+    tickers = get_all_registered_tickers()
+    results = []
+    
+    for ticker in tickers:
+        res = update_etf_data_by_ticker(ticker)
+        results.append({"ticker": ticker, "result": res})
+        
+    return {"message": "업데이트 완료", "details": results}        
