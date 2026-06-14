@@ -116,14 +116,23 @@ async def get_etf_list():
 
 @app.get("/etfs/{ticker}")
 async def get_etf_detail(ticker: str):
-    """특정 ETF의 상세 정보를 조회합니다."""
     try:
-        # Supabase에서 해당 ticker 정보 조회
-        response = supabase.table("etf_registry").select("*").eq("ticker", ticker).single().execute()
-        if not response.data:
+        # 데이터가 여러 개여도 가장 최신 것 하나만 가져오도록 명시
+        response = supabase.table("etf_registry")\
+                           .select("*")\
+                           .eq("ticker", ticker)\
+                           .order("created_at", desc=True)\
+                           .limit(1)\
+                           .execute()
+        
+        # 데이터가 아예 없는 경우 404 처리
+        if not response.data or len(response.data) == 0:
             raise HTTPException(status_code=404, detail="ETF를 찾을 수 없습니다.")
-        return response.data
+        
+        return response.data[0]
     except Exception as e:
+        # 에러 내용을 로그로 찍어서 확인
+        print(f"Error in get_etf_detail: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
