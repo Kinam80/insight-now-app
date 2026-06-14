@@ -33,16 +33,15 @@ app.add_middleware(
 )
 
 # --- 라우터 등록 ---
-app.include_router(auth.router)
-app.include_router(news.router)
-app.include_router(posts.router)
-app.include_router(payments.router)
-app.include_router(admin.router)
-app.include_router(chat.router)
+app.include_router(auth.router, prefix="/api")
+app.include_router(news.router, prefix="/api")
+app.include_router(posts.router, prefix="/api")
+app.include_router(payments.router, prefix="/api")
+app.include_router(admin.router, prefix="/api") # 이제 /api/admin/users 가 됨
+app.include_router(chat.router, prefix="/api")
 
-# --- 정적 파일 마운트 ---
-if os.path.exists("app/static/admin"):
-    app.mount("/admin", StaticFiles(directory="app/static/admin", html=True), name="admin")
+# --- 정적 파일은 그대로 둠 ---
+app.mount("/admin", StaticFiles(directory="app/static/admin", html=True), name="admin")
 
 # --- 종목 등록용 데이터 모델 ---
 class EtfRegistration(BaseModel):
