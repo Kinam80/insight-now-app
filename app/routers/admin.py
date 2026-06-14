@@ -1,13 +1,11 @@
 from fastapi import APIRouter
 
-router = APIRouter()
 
-# main.py에서 prefix="/api"를 붙였으므로, 
-# 실제 호출 주소는 /api/admin/users 가 됩니다.
-@router.get("/users") 
+router = APIRouter(prefix="/admin") # 여기서 /admin을 추가해야 합니다!
+
+@router.get("/users") # main.py(/api) + router(/admin) + 여기(/users) = /api/admin/users
 def get_users():
-    # 여기에 사용자 목록 로직
-    return {"users": []}
+    return {"status": "success", "data": []}
 
 @router.get("/stats")
 def get_stats():
