@@ -1025,7 +1025,7 @@
         async function loadEtfRegistry() {
             try {
                 // 1. 경로에 /api 추가 (main.py의 prefix와 일치시킴)
-                const res = await fetch(`${API_BASE}/api/etf/list`, {
+                const res = await fetch(`${API_BASE}/etf/list`, {
                     headers: { 'authorization': `Bearer ${currentToken}` }
                 });
                 const data = await res.json(); 
@@ -1059,7 +1059,7 @@
             const description = document.getElementById(`desc-${ticker}`).value;
             try {
                 // 경로에 /api 추가
-                const response = await fetch(`${API_BASE}/api/etf/update-description`, {
+                const response = await fetch(`${API_BASE}/etf/update-description`, {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
@@ -1078,7 +1078,7 @@
 
             try {
                 // 경로에 /api 추가
-                const response = await fetch(`${API_BASE}/api/etf/register`, {
+                const response = await fetch(`${API_BASE}/etf/register`, {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
@@ -1100,7 +1100,7 @@
             if (!confirm(`${ticker}를 삭제하시겠습니까?`)) return;
             try {
                 // 경로에 /api 추가
-                await fetch(`${API_BASE}/api/etf/unregister/${ticker}`, {
+                await fetch(`${API_BASE}/etf/unregister/${ticker}`, {
                     method: 'DELETE',
                     headers: { 'authorization': `Bearer ${currentToken}` }
                 });
@@ -1112,7 +1112,7 @@
             showAlert('데이터 업데이트 중...', 'success');
             try {
                 // 경로에 /api 추가
-                const res = await fetch(`${API_BASE}/api/admin/update-etf`, {
+                const res = await fetch(`${API_BASE}/admin/update-etf`, {
                     method: 'POST',
                     headers: { 'authorization': `Bearer ${currentToken}` }
                 });
