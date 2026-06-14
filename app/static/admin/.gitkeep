@@ -1,0 +1,281 @@
+📋 ETF 자동화 시스템 개발 로드맵 (Memory)
+1. 데이터베이스 구축 (지금 단계)
+etf_registry 테이블: 관리자가 추가/삭제할 ETF 티커 목록 관리 (입력창).
+
+etf_data 테이블: 서버가 긁어온 가격/설명(자동) + 관리자가 입력한 비중(수동)이 합쳐지는 저장소.
+
+2. 서버 백엔드 로직 (API & 스케줄러)
+업데이트 함수 (update_etf_info):
+
+etf_registry에서 티커를 가져옴.
+
+yfinance를 호출해 가격/설명을 받아옴.
+
+etf_data 테이블에 upsert(없으면 만들고, 있으면 갱신)함.
+
+관리자 전용 API (/admin/update-etf): * 관리자 페이지에서 버튼을 누르면 즉시 위 함수를 실행하여 데이터를 최신화함.
+
+3. 관리자 페이지 UI 업그레이드
+[ETF 관리] 메뉴 생성:
+
+입력폼: 티커를 등록하고 삭제하는 기능.
+
+비중 입력 테이블: 각 ETF별로 비중 데이터를 입력하고 저장하는 팝업창.
+
+업데이트 버튼: 클릭 시 서버 API를 호출하여 즉시 갱신.
+
+4. 앱 화면 (Client)
+데이터 소스: etf_data 테이블만 바라봄. (이미 리포트 시스템과 동일한 방식이라 최적화 완료)
+
+💡 현재 진행 상황 확인
+[ ] 데이터베이스 테이블 생성 (진행중 - 형님이 Supabase에서 클릭하면 끝납니다)
+
+[ ] 백엔드 파이썬 코드 추가 (테이블 준비되면 제가 바로 드립니다)
+
+[ ] 관리자 페이지 UI 수정 (코드 예시 제공)
+
+[ ] 최종 연결 및 테스트
+git add .
+git commit -m
+git push
+ETF정보 
+(venv) PS C:\Users\hancu\app\APP> python test_etf.py
+{
+    "종목명": "IPARK-DVP",
+    "현재가": 20000.0,
+    "설명": "IPARK Hyundai Development Company, operates as a financial real estate company, provides real estate services primarily in South Korea. The company is involved in general architecture, civil engineering, outsourced housing, and self-construction activities. The company was formerly known as HDC Hyundai Development Company and changed its name to IPARK Hyundai Development Company in March 2026. IPARK Hyundai Development Company is headquartered in Seoul, South Korea.",
+    "통화": "KRW",
+    "전체 데이터 샘플": {
+        "address1": "55, Hangang-daero 23-gil",
+        "address2": "Yongsan-gu",
+        "city": "Seoul",
+        "country": "South Korea",
+        "phone": "82 2 2008 9114",
+        "website": "https://www.hdc-dvp.com",
+        "industry": "Engineering & Construction",
+        "industryKey": "engineering-construction",
+        "industryDisp": "Engineering & Construction",
+        "sector": "Industrials",
+        "sectorKey": "industrials",
+        "sectorDisp": "Industrials",
+        "longBusinessSummary": "IPARK Hyundai Development Company, operates as a financial real estate company, provides real estate services primarily in South Korea. The company is involved in general architecture, civil engineering, outsourced housing, and self-construction activities. The company was formerly known as HDC Hyundai Development Company and changed its name to IPARK Hyundai Development Company in March 2026. IPARK Hyundai Development Company is headquartered in Seoul, South Korea.",
+        "companyOfficers": [
+            {
+                "maxAge": 1,
+                "name": "Mr. Chung  Kyung-Ku",
+                "title": "President, CEO & Chairman of the Board",
+                "exercisedValue": 0,
+                "unexercisedValue": 0
+            },
+            {
+                "maxAge": 1,
+                "name": "Hyun Woo  Lee",
+                "age": 56,
+                "title": "MD & Sales Director",
+                "yearBorn": 1969,
+                "exercisedValue": 0,
+                "unexercisedValue": 0
+            },
+            {
+                "maxAge": 1,
+                "name": "Yonghyun  Park",
+                "age": 57,
+                "title": "Head of Construction Technology Division",
+                "yearBorn": 1968,
+                "exercisedValue": 0,
+                "unexercisedValue": 0
+            },
+            {
+                "maxAge": 1,
+                "name": "Hee Yun  Park",
+                "age": 57,
+                "title": "MD & Head of Development Headquarters",
+                "yearBorn": 1968,
+                "exercisedValue": 0,
+                "unexercisedValue": 0
+            },
+            {
+                "maxAge": 1,
+                "name": "Chi Sung  Bae",
+                "age": 53,
+                "title": "Head of Development Department",
+                "yearBorn": 1972,
+                "exercisedValue": 0,
+                "unexercisedValue": 0
+            },
+            {
+                "maxAge": 1,
+                "name": "Younghan  Kim",
+                "age": 55,
+                "title": "Head of Infrastructure Division",
+                "yearBorn": 1970,
+                "exercisedValue": 0,
+                "unexercisedValue": 0
+            }
+        ],
+        "executiveTeam": [],
+        "maxAge": 86400,
+        "priceHint": 2,
+        "previousClose": 19340.0,
+        "open": 20100.0,
+        "dayLow": 19810.0,
+        "dayHigh": 20400.0,
+        "regularMarketPreviousClose": 19340.0,
+        "regularMarketOpen": 20100.0,
+        "regularMarketDayLow": 19810.0,
+        "regularMarketDayHigh": 20400.0,
+        "dividendRate": 700.0,
+        "dividendYield": 3.62,
+        "exDividendDate": 1774828800,
+        "payoutRatio": 0.2899,
+        "fiveYearAvgDividendYield": 3.66,
+        "beta": 0.61,
+        "volume": 85478,
+        "regularMarketVolume": 85478,
+        "averageVolume": 312770,
+        "averageVolume10days": 224557,
+        "averageDailyVolume10Day": 224557,
+        "bid": 20050.0,
+        "ask": 20100.0,
+        "bidSize": 0,
+        "askSize": 0,
+        "marketCap": 1274820689920,
+        "nonDilutedMarketCap": 1232751520200,
+        "fiftyTwoWeekLow": 18150.0,
+        "fiftyTwoWeekHigh": 27050.0,
+        "allTimeHigh": 68168.055,
+        "allTimeLow": 9290.0,
+        "priceToSalesTrailing12Months": 0.3256078,
+        "fiftyDayAverage": 21826.4,
+        "twoHundredDayAverage": 20991.85,
+        "currency": "KRW",
+        "tradeable": false,
+        "enterpriseValue": 2850185805824,
+        "forwardPE": 2.7027879,
+        "profitMargins": 0.03914,
+        "floatShares": 34983346,
+        "sharesOutstanding": 63741030,
+        "heldPercentInsiders": 0.4302,
+        "heldPercentInstitutions": 0.20416,
+        "impliedSharesOutstanding": 63741030,
+        "lastFiscalYearEnd": 1767139200,
+        "nextFiscalYearEnd": 1798675200,
+        "mostRecentQuarter": 1774915200,
+        "earningsQuarterlyGrowth": -0.09,
+        "netIncomeToCommon": 153255690240,
+        "enterpriseToRevenue": 0.728,
+        "enterpriseToEbitda": 8.772,
+        "52WeekChange": -0.23557311,
+        "SandP52WeekChange": 0.23713183,
+        "lastDividendValue": 700.0,
+        "lastDividendDate": 1774828800,
+        "quoteType": "EQUITY",
+        "currentPrice": 20000.0,
+        "targetHighPrice": 36000.0,
+        "targetLowPrice": 28000.0,
+        "targetMeanPrice": 29923.076,
+        "targetMedianPrice": 29000.0,
+        "recommendationMean": 1.38462,
+        "recommendationKey": "strong_buy",
+        "numberOfAnalystOpinions": 13,
+        "totalCash": 745238102016,
+        "totalCashPerShare": 11837.885,
+        "ebitda": 324923195392,
+        "totalDebt": 2377900359680,
+        "quickRatio": 0.583,
+        "currentRatio": 1.538,
+        "totalRevenue": 3915203215360,
+        "debtToEquity": 74.17,
+        "revenuePerShare": 61601.254,
+        "returnOnAssets": 0.022720002,
+        "returnOnEquity": 0.04842,
+        "grossProfits": 614015827968,
+        "freeCashflow": 569279053824,
+        "operatingCashflow": 119700094976,
+        "earningsGrowth": -0.072,
+        "revenueGrowth": -0.256,
+        "grossMargins": 0.15683,
+        "ebitdaMargins": 0.08299,
+        "operatingMargins": 0.11891,
+        "financialCurrency": "KRW",
+        "symbol": "294870.KS",
+        "language": "en-US",
+        "region": "US",
+        "typeDisp": "Equity",
+        "quoteSourceName": "Delayed Quote",
+        "triggerable": false,
+        "customPriceAlertConfidence": "LOW",
+        "corporateActions": [],
+        "regularMarketTime": 1781240435,
+        "exchange": "KSC",
+        "messageBoardId": "finmb_419306808",
+        "exchangeTimezoneName": "Asia/Seoul",
+        "exchangeTimezoneShortName": "KST",
+        "gmtOffSetMilliseconds": 32400000,
+        "market": "kr_market",
+        "esgPopulated": false,
+        "regularMarketChangePercent": 3.3950617,
+        "regularMarketPrice": 20000.0,
+        "marketState": "REGULAR",
+        "shortName": "IPARK-DVP",
+        "longName": "IPARK Hyundai Development Company",
+        "hasPrePostMarketData": false,
+        "firstTradeDateMilliseconds": 1528761600000,
+        "regularMarketChange": 660.0,
+        "regularMarketDayRange": "19810.0 - 20400.0",
+        "fullExchangeName": "KSE",
+        "averageDailyVolume3Month": 312770,
+        "fiftyTwoWeekLowChange": 1850.0,
+        "fiftyTwoWeekLowChangePercent": 0.101928376,
+        "fiftyTwoWeekRange": "18150.0 - 27050.0",
+        "fiftyTwoWeekHighChange": -7050.0,
+        "fiftyTwoWeekHighChangePercent": -0.26062846,
+        "fiftyTwoWeekChangePercent": -23.557312,
+        "earningsTimestamp": 1777269600,
+        "earningsTimestampStart": 1784786400,
+        "earningsTimestampEnd": 1784786400,
+        "earningsCallTimestampStart": 1745470800,
+        "earningsCallTimestampEnd": 1745470800,
+        "isEarningsDateEstimate": true,
+        "epsCurrentYear": 5469.168,
+        "priceEpsCurrentYear": 3.6568635,
+        "fiftyDayAverageChange": -1826.4004,
+        "fiftyDayAverageChangePercent": -0.0836785,
+        "twoHundredDayAverageChange": -991.8496,
+        "twoHundredDayAverageChangePercent": -0.047249272,
+        "sourceInterval": 20,
+        "exchangeDataDelayedBy": 20,
+        "prevName": "HDC Hyundai Development Company",
+        "nameChangeDate": "2026-06-11",
+        "averageAnalystRating": "1.4 - Strong Buy",
+        "cryptoTradeable": false,
+        "trailingPegRatio": null
+💡 시스템 아키텍처 핵심 정리
+관제탑 (main.py):
+
+서버의 시작점입니다.
+
+include_router를 통해 모든 라우터에 prefix="/api"를 부여하여 통일된 주소 체계를 만듭니다.
+
+비즈니스 로직(DB 저장, yfinance 호출 등)은 절대 여기 두지 않고, 아래 부서로 넘깁니다.
+
+교통정리 (routers/ 폴더):
+
+admin.py, auth.py, news.py, chat.py 등이 여기에 있습니다.
+
+"어떤 주소로 요청이 왔으니, 어떤 실무 로직을 실행하라"고 지시하는 중간 관리자입니다.
+
+프론트엔드(index.html)가 요청하는 API_BASE/주소를 받아내는 창구입니다.
+
+실무부서 (services/ 폴더):
+
+사용자님이 보여주신 auth_service.py, etf_service.py, news_service.py가 여기 해당합니다.
+
+실제 Supabase DB 연동, yfinance 데이터 수집, JWT 토큰 생성 등 복잡한 실무를 처리합니다.
+[협업 규칙]
+
+전체 코드를 다시 생성할 때 기존 설정 코드(mount, import, scheduler 등)를 누락하지 마세요.
+
+제가 지시한 수정사항 외에 임의로 코드 위치를 바꾸거나 생략하지 마세요.
+
+수정 후에는 **'변경 사항 리스트'**를 반드시 작성하여 원본과 대조했음을 확인시켜 주세요.
