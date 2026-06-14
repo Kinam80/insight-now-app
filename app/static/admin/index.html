@@ -1001,7 +1001,7 @@
 
                 const data = await res.json();
                 console.log("대시보드 데이터:", data); // <--- 이 줄을 추가하세요!
-                
+
                 document.getElementById('stat-users').textContent = (data.total_users || 0).toLocaleString('ko-KR');
                 document.getElementById('stat-revenue').textContent = `₩${(data.total_revenue || 0).toLocaleString('ko-KR')}`;
                 document.getElementById('stat-posts').textContent = data.total_posts || 0;
@@ -1015,6 +1015,7 @@
                 loadPosts();
                 loadCustomers();
                 loadKeywords();
+                loadEtfRegistry();
             } catch (error) {
                 console.error('대시보드 로드 실패', error);
             }
