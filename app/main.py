@@ -11,6 +11,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from pydantic import BaseModel
 # 기존 import문들 아래에 추가
 from app.database import supabase
+from pathlib import Path
 
 # 서비스 함수 임포트
 from app.services.etf_service import update_etf_data_by_ticker, get_all_registered_tickers, add_to_registry
@@ -32,7 +33,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 기존 코드 순서 (이걸 아래처럼 바꾸세요) ---
+# --- 기존 코드 순서 ---
 app.include_router(auth.router, prefix="/api")
 app.include_router(news.router, prefix="/api")
 app.include_router(posts.router, prefix="/api")
@@ -41,8 +42,7 @@ app.include_router(admin.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 
 # 아래 코드를 라우터 등록 아래로 이동시키세요
-app.mount("/admin", StaticFiles(directory="app/static/admin", html=True), name="admin")
-
+app.mount("/admin", StaticFiles(directory="static/admin", html=True), name="admin")
 # --- 종목 등록용 데이터 모델 ---
 class EtfRegistration(BaseModel):
     ticker: str
@@ -85,7 +85,7 @@ def fetch_market_data():
     except: pass
     return results
 
-@app.get("/market/indices")
+@app.get("/api/market/indices")
 async def get_market_indices():
     if time.time() - market_data_cache["last_updated"] > 60 or not market_data_cache["data"]:
         market_data_cache["data"] = fetch_market_data()
@@ -94,7 +94,7 @@ async def get_market_indices():
 
 # --- ETF 관리 API (등록 및 업데이트) ---
 
-@app.post("/etf/register")
+@app.post("/api/etf/register")
 async def register_etf(data: EtfRegistration):
     """새 종목번호를 등록하고 즉시 데이터를 갱신합니다."""
     try:
@@ -103,7 +103,8 @@ async def register_etf(data: EtfRegistration):
         return {"message": "등록 및 업데이트 완료", "ticker": data.ticker, "result": update_res}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-@app.get("/etf/list")
+
+@app.get("/api/etf/list")
 async def get_etf_list():
     """등록된 모든 ETF 목록을 가져옵니다."""
     try:
@@ -113,16 +114,16 @@ async def get_etf_list():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/etfs/{ticker}")
+@app.get("/api/etfs/{ticker}")
 async def get_etf_detail(ticker: str):
     try:
         # 데이터가 여러 개여도 가장 최신 것 하나만 가져오도록 명시
         response = supabase.table("etf_registry")\
-                           .select("*")\
-                           .eq("ticker", ticker)\
-                           .order("created_at", desc=True)\
-                           .limit(1)\
-                           .execute()
+                            .select("*")\
+                            .eq("ticker", ticker)\
+                            .order("created_at", desc=True)\
+                            .limit(1)\
+                            .execute()
         
         # 데이터가 아예 없는 경우 404 처리
         if not response.data or len(response.data) == 0:
@@ -135,7 +136,7 @@ async def get_etf_detail(ticker: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/admin/update-etf")
+@app.post("/api/admin/update-etf")
 async def trigger_etf_update():
     """모든 등록된 종목번호를 한 번에 업데이트합니다."""
     tickers = get_all_registered_tickers()
@@ -144,8 +145,9 @@ async def trigger_etf_update():
         res = update_etf_data_by_ticker(ticker)
         results.append({"ticker": ticker, "result": res})
     return {"message": "업데이트 완료", "details": results}
+
 # 삭제 기능을 위한 엔드포인트 추가
-@app.delete("/etf/unregister/{ticker}")
+@app.delete("/api/etf/unregister/{ticker}")
 async def unregister_etf(ticker: str):
     """지정된 종목번호를 레지스트리에서 삭제합니다."""
     try:
@@ -154,6 +156,7 @@ async def unregister_etf(ticker: str):
         return {"message": f"{ticker} 삭제 완료", "data": response.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/")
 def root():
     return {"message": "Insight Now API 서버 정상 작동 중 🚀"}
