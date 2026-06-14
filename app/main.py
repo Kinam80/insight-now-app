@@ -41,8 +41,12 @@ app.include_router(payments.router, prefix="/api")
 app.include_router(admin.router, prefix="/api") 
 app.include_router(chat.router, prefix="/api")
 
-# 아래 코드를 라우터 등록 아래로 이동시키세요
-app.mount("/admin", StaticFiles(directory="static/admin", html=True), name="admin")
+# 현재 main.py가 위치한 폴더의 경로를 기준으로 설정
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(BASE_DIR, "static", "admin")
+
+# 수정된 부분: 정확한 절대 경로를 전달합니다.
+app.mount("/admin", StaticFiles(directory=STATIC_DIR, html=True), name="admin")
 # --- 종목 등록용 데이터 모델 ---
 class EtfRegistration(BaseModel):
     ticker: str
@@ -169,7 +173,16 @@ scheduler.start()
 @app.on_event("startup")
 async def startup_event():
     print("🚀 서버 초기화 시작...")
+    
+    # 1. 초기 데이터 로드
     asyncio.create_task(background_init())
+    
+    # 2. 경로 출력
+    print("--- 📋 현재 등록된 API 경로 목록 ---")
+    for route in app.routes:
+        if hasattr(route, "methods"):
+            print(f"{list(route.methods)} : {route.path}")
+    print("----------------------------------")
 
 async def background_init():
     try:
@@ -181,10 +194,3 @@ async def background_init():
         print("✅ 초기 데이터 로드 완료")
     except Exception as e:
         print(f"⚠️ 초기화 중 경고: {e}")
-@app.on_event("startup")
-async def print_routes():
-    print("--- 📋 현재 등록된 API 경로 목록 ---")
-    for route in app.routes:
-        if hasattr(route, "methods"):
-            print(f"{list(route.methods)} : {route.path}")
-    print("----------------------------------")        
