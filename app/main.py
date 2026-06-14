@@ -181,3 +181,10 @@ async def background_init():
         print("✅ 초기 데이터 로드 완료")
     except Exception as e:
         print(f"⚠️ 초기화 중 경고: {e}")
+@app.on_event("startup")
+async def print_routes():
+    print("--- 📋 현재 등록된 API 경로 목록 ---")
+    for route in app.routes:
+        if hasattr(route, "methods"):
+            print(f"{list(route.methods)} : {route.path}")
+    print("----------------------------------")        
