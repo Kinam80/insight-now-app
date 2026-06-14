@@ -32,15 +32,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 라우터 등록 ---
+# --- 기존 코드 순서 (이걸 아래처럼 바꾸세요) ---
 app.include_router(auth.router, prefix="/api")
 app.include_router(news.router, prefix="/api")
 app.include_router(posts.router, prefix="/api")
 app.include_router(payments.router, prefix="/api")
-app.include_router(admin.router, prefix="/api") # 이제 /api/admin/users 가 됨
+app.include_router(admin.router, prefix="/api") 
 app.include_router(chat.router, prefix="/api")
 
-# --- 정적 파일은 그대로 둠 ---
+# 아래 코드를 라우터 등록 아래로 이동시키세요
 app.mount("/admin", StaticFiles(directory="app/static/admin", html=True), name="admin")
 
 # --- 종목 등록용 데이터 모델 ---
