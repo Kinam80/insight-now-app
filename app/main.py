@@ -144,17 +144,6 @@ async def trigger_etf_update():
         res = update_etf_data_by_ticker(ticker)
         results.append({"ticker": ticker, "result": res})
     return {"message": "업데이트 완료", "details": results}
-# main.py 또는 admin.py에 추가
-@app.get("/admin/stats")
-async def get_admin_stats():
-    # 여기서 DB(Supabase)에서 유저 수, 수익 등을 조회하는 로직 필요
-    return {
-        "total_users": 100, 
-        "total_revenue": 50000, 
-        "total_posts": 10,
-        "total_transactions": 5,
-        "avg_price": 5000
-    }
 # 삭제 기능을 위한 엔드포인트 추가
 @app.delete("/etf/unregister/{ticker}")
 async def unregister_etf(ticker: str):
