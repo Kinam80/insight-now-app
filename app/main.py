@@ -211,3 +211,11 @@ async def update_etf_description(data: EtfDescriptionUpdate):
     except Exception as e:
         # 통로에서 에러가 발생하면 서버가 이유를 알려줍니다.
         raise HTTPException(status_code=500, detail=str(e))
+# main.py 맨 아래에 추가
+@app.get("/api/admin/stats")
+async def get_admin_stats_direct():
+    return {"total_users": 100, "total_revenue": 50000, "total_posts": 10}
+
+@app.get("/api/admin/users")
+async def get_admin_users_direct():
+    return {"status": "success", "users": []}
