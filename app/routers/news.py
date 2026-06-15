@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from app.database import supabase
 from datetime import datetime, timedelta
 from dateutil import parser
@@ -53,7 +53,7 @@ def enhance_news_data(item: dict) -> dict:
         "content": item.get("content", ""),
         "published_at": item.get("created_at"),
         "time_ago": format_time_ago(item.get("created_at", "")),
-        "source_url": item.get("source_url"),  # 🔥 여기서 DB의 링크를 앱으로 전달!
+        "source_url": item.get("source_url"),
         "premium_metrics": {
             "importance": "🔥" * importance_stars,
             "insight_score": f"{insight_score}%",
@@ -67,31 +67,43 @@ def get_news(
     limit: int = Query(default=20, description="가져올 뉴스 수"),
     page: int = Query(default=1, description="페이지 번호")
 ):
-    offset = (page - 1) * limit
-    query = supabase.table("ai_news").select("*").order("created_at", desc=True)
-    if category: query = query.eq("category", category)
-    result = query.range(offset, offset + limit - 1).execute()
-    enhanced_list = [enhance_news_data(item) for item in result.data]
-    return {
-        "status": "success",
-        "page": page,
-        "limit": limit,
-        "count": len(enhanced_list),
-        "news": enhanced_list
-    }
+    try:
+        offset = (page - 1) * limit
+        query = supabase.table("ai_news").select("*").order("created_at", desc=True)
+        if category: query = query.eq("category", category)
+        result = query.range(offset, offset + limit - 1).execute()
+        enhanced_list = [enhance_news_data(item) for item in result.data]
+        return {
+            "status": "success",
+            "page": page,
+            "limit": limit,
+            "count": len(enhanced_list),
+            "news": enhanced_list
+        }
+    except Exception as e:
+        print(f"❌ 뉴스 조회 오류: {e}")
+        raise HTTPException(status_code=500, detail="데이터베이스 연결 중 오류가 발생했습니다.")
 
 @router.get("/latest")
 def get_latest_news():
-    categories = ["us_market", "kr_market", "fx_rate", "bond_rate"]
-    result = {}
-    for cat in categories:
-        data = supabase.table("ai_news").select("*").eq("category", cat).order("created_at", desc=True).limit(3).execute()
-        result[cat] = [enhance_news_data(item) for item in data.data]
-    return result
+    try:
+        categories = ["us_market", "kr_market", "fx_rate", "bond_rate"]
+        result = {}
+        for cat in categories:
+            data = supabase.table("ai_news").select("*").eq("category", cat).order("created_at", desc=True).limit(3).execute()
+            result[cat] = [enhance_news_data(item) for item in data.data]
+        return result
+    except Exception as e:
+        print(f"❌ 최신 뉴스 조회 오류: {e}")
+        raise HTTPException(status_code=500, detail="최신 뉴스 정보를 불러오는 데 실패했습니다.")
 
 @router.get("/{news_id}")
 def get_news_detail(news_id: str):
-    result = supabase.table("ai_news").select("*").eq("id", news_id).execute()
-    if not result.data:
-        return {"error": "해당 보고서를 찾을 수 없습니다."}
-    return enhance_news_data(result.data[0])
+    try:
+        result = supabase.table("ai_news").select("*").eq("id", news_id).execute()
+        if not result.data:
+            raise HTTPException(status_code=404, detail="해당 보고서를 찾을 수 없습니다.")
+        return enhance_news_data(result.data[0])
+    except Exception as e:
+        if isinstance(e, HTTPException): raise e
+        raise HTTPException(status_code=500, detail="상세 정보 조회 오류")
