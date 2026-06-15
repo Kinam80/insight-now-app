@@ -21,7 +21,7 @@ class ApiService {
   static Future<List<MarketIndex>> fetchMarketIndices() async {
     try {
       final response = await http.get(
-        Uri.parse('${ApiConstants.baseUrl}/market/indices'),
+        Uri.parse(ApiConstants.marketIndicesEndpoint), 
         headers: await _getHeaders(),
       );
       
@@ -35,7 +35,7 @@ class ApiService {
     return []; 
   }
 
-  // 2. 서버에서 게시글 전체 데이터를 가져오는 함수 (완벽하게 복구함)
+  // 2. 서버에서 게시글 전체 데이터를 가져오는 함수
   static Future<List<dynamic>> fetchPosts() async {
     try {
       final response = await http.get(

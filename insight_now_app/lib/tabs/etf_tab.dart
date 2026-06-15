@@ -12,7 +12,7 @@ class EtfTab extends StatefulWidget {
 
 class _EtfTabState extends State<EtfTab> {
   Future<List<dynamic>> fetchEtfData() async {
-    final response = await http.get(Uri.parse('${ApiConstants.baseUrl}/etf/list'));
+    final response = await http.get(Uri.parse(ApiConstants.etfEndpoint));
     if (response.statusCode == 200) {
       return json.decode(response.body);
     } else {
