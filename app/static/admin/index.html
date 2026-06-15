@@ -783,7 +783,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'authorization': `Bearer ${currentToken}`
+                        'Authorization': `Bearer ${currentToken}`
                     },
                     body: JSON.stringify({
                         title,
@@ -966,7 +966,7 @@
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
-                        'authorization': `Bearer ${currentToken}`
+                        'Authorization': `Bearer ${currentToken}`
                     },
                     body: JSON.stringify({ role })
                 });
