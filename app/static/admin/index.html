@@ -848,7 +848,7 @@
             try {
                 const res = await fetch(`${API_BASE}/posts/${postId}`, {
                     method: 'DELETE',
-                    headers: { 'authorization': `Bearer ${currentToken}` }
+                    headers: { 'Authorization': `Bearer ${currentToken}` }
                 });
 
                 if (res.ok) {
@@ -918,7 +918,7 @@
         async function loadCustomers() {
             try {
                 const res = await fetch(`${API_BASE}/admin/users`, {
-                    headers: { 'authorization': `Bearer ${currentToken}` }
+                    headers: { 'Authorization': `Bearer ${currentToken}` }
                 });
 
                 const data = await res.json();
@@ -983,7 +983,7 @@
             try {
                 await fetch(`${API_BASE}/admin/users/${userId}`, {
                     method: 'DELETE',
-                    headers: { 'authorization': `Bearer ${currentToken}` }
+                    headers: { 'Authorization': `Bearer ${currentToken}` }
                 });
                 showAlert('고객이 삭제되었습니다', 'success');
                 loadCustomers();
@@ -996,7 +996,7 @@
         async function loadDashboard() {
             try {
                 const res = await fetch(`${API_BASE}/admin/stats`, {
-                    headers: { 'authorization': `Bearer ${currentToken}` }
+                    headers: { 'Authorization': `Bearer ${currentToken}` }
                 });
 
                 const data = await res.json();
@@ -1026,7 +1026,7 @@
             try {
                 // 1. 경로에 /api 추가 (main.py의 prefix와 일치시킴)
                 const res = await fetch(`${API_BASE}/etf/list`, {
-                    headers: { 'authorization': `Bearer ${currentToken}` }
+                    headers: { 'Authorization': `Bearer ${currentToken}` }
                 });
                 const data = await res.json(); 
                 const tbody = document.getElementById('etf-data-list');
@@ -1102,7 +1102,7 @@
                 // 경로에 /api 추가
                 await fetch(`${API_BASE}/etf/unregister/${ticker}`, {
                     method: 'DELETE',
-                    headers: { 'authorization': `Bearer ${currentToken}` }
+                    headers: { 'Authorization': `Bearer ${currentToken}` }
                 });
                 loadEtfRegistry();
             } catch (error) { showAlert('삭제 실패', 'error'); }
@@ -1114,7 +1114,7 @@
                 // 경로에 /api 추가
                 const res = await fetch(`${API_BASE}/admin/update-etf`, {
                     method: 'POST',
-                    headers: { 'authorization': `Bearer ${currentToken}` }
+                    headers: { 'Authorization': `Bearer ${currentToken}` }
                 });
                 if (res.ok) {
                     showAlert('✅ 갱신 완료!', 'success');
