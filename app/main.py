@@ -194,3 +194,20 @@ async def background_init():
         print("✅ 초기 데이터 로드 완료")
     except Exception as e:
         print(f"⚠️ 초기화 중 경고: {e}")
+# --- [통로: ETF 설명 업데이트 API] ---
+class EtfDescriptionUpdate(BaseModel):
+    ticker: str
+    description: str
+
+@app.post("/api/etf/update-description")
+async def update_etf_description(data: EtfDescriptionUpdate):
+    try:
+        # 이 통로를 통해 받은 데이터를 etf_data 테이블에 저장합니다.
+        response = supabase.table("etf_data")\
+                           .update({"description": data.description})\
+                           .eq("ticker", data.ticker)\
+                           .execute()
+        return {"message": "설명 업데이트 성공", "data": response.data}
+    except Exception as e:
+        # 통로에서 에러가 발생하면 서버가 이유를 알려줍니다.
+        raise HTTPException(status_code=500, detail=str(e))

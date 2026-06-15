@@ -1084,7 +1084,7 @@
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${currentToken}` 
                     },
-                    body: JSON.stringify({ ticker: ticker })
+                    body: JSON.stringify({ ticker: ticker, weight: 0.0 })
                 });
                 if (response.ok) {
                     showAlert('✅ 등록 성공!', 'success');
