@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:flutter_markdown/flutter_markdown.dart'; // 1. 패키지 임포트 추가
 import '../constants/api_constants.dart';
 
 class DetailScreen extends StatefulWidget {
-  final Map<String, dynamic>? etfData; // ETF 데이터를 통째로 받음
-  final String? ticker; // ETF용 (기존 호환성 유지)
-  final String? postId; // 게시글용
+  final Map<String, dynamic>? etfData;
+  final String? ticker;
+  final String? postId;
 
-  // 생성자: ticker/postId가 없더라도 etfData가 들어오면 허용하도록 수정
   const DetailScreen({super.key, this.etfData, this.ticker, this.postId}) 
       : assert(etfData != null || ticker != null || postId != null);
 
@@ -23,7 +23,6 @@ class _DetailScreenState extends State<DetailScreen> {
   @override
   void initState() {
     super.initState();
-    // 데이터가 이미 들어왔다면 로딩할 필요 없음
     if (widget.etfData != null) {
       _data = widget.etfData;
       _isLoading = false;
@@ -64,7 +63,6 @@ class _DetailScreenState extends State<DetailScreen> {
     }
 
     bool isEtf = widget.etfData != null || widget.ticker != null;
-    // 데이터 꺼내기 (etfData가 우선, 없으면 _data에서 추출)
     final name = _data?['name'] ?? '종목명 없음';
     final price = _data?['price'] ?? 0;
     final weight = _data?['weight'] ?? 0;
@@ -73,7 +71,8 @@ class _DetailScreenState extends State<DetailScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(isEtf ? "$name 상세" : "분석 상세")),
       backgroundColor: const Color(0xFF0A192F),
-      body: Padding(
+      // 2. SingleChildScrollView로 감싸서 내용이 길어도 스크롤 가능하게 수정
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(20.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -93,10 +92,23 @@ class _DetailScreenState extends State<DetailScreen> {
                     Text("현재가: ₩$price", style: const TextStyle(fontSize: 18, color: Colors.greenAccent)),
                     Text("비중: $weight%", style: const TextStyle(fontSize: 18, color: Colors.white70)),
                     const SizedBox(height: 10),
-                    Text(desc, style: const TextStyle(fontSize: 16, color: Colors.white)),
+                    // 3. MarkdownBody 적용: 마크다운 텍스트를 자동으로 예쁘게 랜더링
+                    MarkdownBody(
+                      data: desc, 
+                      styleSheet: MarkdownStyleSheet(
+                        p: const TextStyle(fontSize: 16, color: Colors.white),
+                        h1: const TextStyle(fontSize: 20, color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                    ),
                   ],
                 )
-              : Text(_data!['content'] ?? '내용 없음', style: const TextStyle(fontSize: 16, color: Colors.white)),
+              // 4. 일반 게시글도 MarkdownBody로 통일 (일관성 유지)
+              : MarkdownBody(
+                  data: _data!['content'] ?? '내용 없음',
+                  styleSheet: MarkdownStyleSheet(
+                    p: const TextStyle(fontSize: 16, color: Colors.white),
+                  ),
+                ),
           ],
         ),
       ),
