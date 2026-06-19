@@ -229,6 +229,27 @@ async def update_etf_description(data: EtfDescriptionUpdate):
         # 통로에서 에러가 발생하면 서버가 이유를 알려줍니다.
         raise HTTPException(status_code=500, detail=str(e))
 # main.py 맨 아래에 추가
+# --- [신규 추가: 경제 보고서 발행 API] ---
+class GovStatsUpdate(BaseModel):
+    title: str
+    content: str
+
+@app.post("/api/admin/gov-stats")
+async def create_gov_stats(data: GovStatsUpdate):
+    try:
+        # Supabase 테이블(gov_stats)에 데이터 저장
+        response = supabase.table("gov_stats").insert({
+            "title": data.title,
+            "content": data.content
+        }).execute()
+        
+        return {"message": "보고서 저장 성공", "data": response.data}
+    except Exception as e:
+        print(f"Error saving report: {e}") # 서버 로그에 에러 출력
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 @app.get("/api/admin/stats")
 async def get_admin_stats_direct():
     return {"total_users": 100, "total_revenue": 50000, "total_posts": 10}
