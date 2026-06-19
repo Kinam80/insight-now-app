@@ -561,9 +561,8 @@
                     <thead>
                         <tr>
                             <th>종목 코드</th>
-                            <th>현재가</th>
-                            <th>상세 설명 (작성 후 저장)</th>
-                            <th>최종 업데이트</th>
+                            <th>종목명</th> <th>현재가</th>
+                            <th>상세 설명</th>
                             <th>작업</th>
                         </tr>
                     </thead>
@@ -1024,22 +1023,22 @@
 
         async function loadEtfRegistry() {
             try {
-                // 1. 경로에 /api 추가 (main.py의 prefix와 일치시킴)
                 const res = await fetch(`${API_BASE}/etf/list`, {
                     headers: { 'Authorization': `Bearer ${currentToken}` }
                 });
                 const data = await res.json(); 
                 const tbody = document.getElementById('etf-data-list');
                 
-                // 2. 서버가 리스트를 바로 반환하므로 data.etfs 대신 data 사용
+                // colspan을 4에서 5로 변경 (종목명 칸이 추가되었으므로)
                 if (!data || data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#aaa;">등록된 ETF가 없습니다</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#aaa;">등록된 ETF가 없습니다</td></tr>';
                     return;
                 }
 
                 tbody.innerHTML = data.map(etf => `
                     <tr>
                         <td>${etf.ticker}</td>
+                        <td>${etf.name || '정보 없음'}</td>
                         <td>₩${(etf.price || 0).toLocaleString('ko-KR')}</td>
                         <td>
                             <textarea id="desc-${etf.ticker}" style="width:90%; height:60px; background:#222; color:#fff; border:1px solid #444; border-radius:4px; padding:5px;">${etf.description || ''}</textarea>
@@ -1058,7 +1057,6 @@
         async function saveDescription(ticker) {
             const description = document.getElementById(`desc-${ticker}`).value;
             try {
-                // 경로에 /api 추가
                 const response = await fetch(`${API_BASE}/etf/update-description`, {
                     method: 'POST',
                     headers: { 
@@ -1067,33 +1065,50 @@
                     },
                     body: JSON.stringify({ ticker: ticker, description: description })
                 });
-                if (response.ok) alert('✅ 저장되었습니다!');
-                else alert('저장 실패');
-            } catch (error) { console.error(error); }
+                if (response.ok) {
+                    alert('✅ 저장되었습니다!');
+                    loadEtfRegistry(); // 저장 완료 후 목록 새로고침
+                } else {
+                    alert('저장 실패');
+                }
+            } catch (error) { 
+                console.error(error); 
+            }
         }
 
         async function addEtfRegistry() {
             const ticker = document.getElementById('etf-ticker-input').value.toUpperCase().trim();
-            if (!ticker) { showAlert('종목번호를 입력하세요', 'error'); return; }
+            // UI의 입력값 가져오기 (값이 없으면 0.0으로 처리)
+            const weight = parseFloat(document.getElementById('etf-weight-input').value) || 0.0;
+
+            if (!ticker) { 
+                showAlert('종목번호를 입력하세요', 'error'); 
+                return; 
+            }
 
             try {
-                // 경로에 /api 추가
                 const response = await fetch(`${API_BASE}/etf/register`, {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${currentToken}` 
                     },
-                    body: JSON.stringify({ ticker: ticker, weight: 0.0 })
+                    // 수정된 부분: 가져온 weight 변수를 사용
+                    body: JSON.stringify({ ticker: ticker, weight: weight })
                 });
+                
                 if (response.ok) {
                     showAlert('✅ 등록 성공!', 'success');
+                    // 입력창 초기화
                     document.getElementById('etf-ticker-input').value = '';
+                    document.getElementById('etf-weight-input').value = ''; 
                     loadEtfRegistry();
                 } else {
                     showAlert('등록 실패', 'error');
                 }
-            } catch (error) { showAlert('통신 오류', 'error'); }
+            } catch (error) { 
+                showAlert('통신 오류', 'error'); 
+            }
         }
 
         async function removeEtfRegistry(ticker) {
