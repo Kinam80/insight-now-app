@@ -38,17 +38,22 @@ class _EtfTabState extends State<EtfTab> {
           final etfs = snapshot.data!;
           return ListView.builder(
             itemCount: etfs.length,
+            // etf_tab.dart의 itemBuilder 부분
             itemBuilder: (context, index) {
               final etf = etfs[index];
+              // 상세 정보가 etf_data 안에 들어있는 경우를 대비한 안전한 접근
+              final name = etf['name'] ?? (etf['etf_data']?['name'] ?? '정보 없음');
+              final price = etf['price'] ?? (etf['etf_data']?['price'] ?? 0);
+
               return ListTile(
-                title: Text(etf['ticker'] ?? 'N/A', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                subtitle: Text('비중: ${etf['weight'] ?? 0}%', style: const TextStyle(color: Colors.grey)),
-                trailing: Text('₩${(etf['price'] ?? 0).toString()}', style: const TextStyle(color: Colors.greenAccent)),
+                title: Text('$name ($etf['ticker'])', style: const TextStyle(color: Colors.white)), // 이름과 코드 표시
+                trailing: Text('₩$price', style: const TextStyle(color: Colors.greenAccent)), // 가격 표시
                 onTap: () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => DetailScreen(ticker: etf['ticker']),
+                      // 상세 화면으로 '이름', '가격', '설명'을 통째로 넘겨줍니다.
+                      builder: (context) => DetailScreen(etfData: etf), 
                     ),
                   );
                 },
