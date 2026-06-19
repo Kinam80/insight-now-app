@@ -110,12 +110,29 @@ async def register_etf(data: EtfRegistration):
 
 @app.get("/api/etf/list")
 async def get_etf_list():
-    """등록된 모든 ETF 목록을 가져옵니다."""
     try:
-        # Supabase에서 데이터 조회
-        response = supabase.table("etf_registry").select("*").eq("is_active", True).execute()
-        return response.data
+        # 1. registry 목록을 가져옵니다.
+        registry_res = supabase.table("etf_registry").select("*").eq("is_active", True).execute()
+        
+        # 2. etf_data 전체를 가져옵니다.
+        data_res = supabase.table("etf_data").select("*").execute()
+        
+        # 3. 파이썬 로직으로 두 리스트를 합칩니다.
+        combined_list = []
+        for reg in registry_res.data:
+            # 티커(ticker)가 같은 데이터를 찾아서 합칩니다.
+            ticker = reg['ticker']
+            # etf_data 리스트에서 현재 티커와 일치하는 것을 찾습니다.
+            match = next((item for item in data_res.data if item['ticker'] == ticker), {})
+            
+            # 레지스트리(reg) + 데이터(match)를 합쳐서 새로운 객체 생성
+            # 이렇게 하면 앱은 etf['name'], etf['price'] 등을 바로 쓸 수 있습니다.
+            combined_item = {**reg, **match}
+            combined_list.append(combined_item)
+            
+        return combined_list
     except Exception as e:
+        print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/etfs/{ticker}")
