@@ -1,41 +1,29 @@
-import sys
-import os
-import yfinance as yf
+import google.generativeai as genai
 
-# 프로젝트 경로 설정
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 형님의 API 키를 여기에 넣으세요
+API_KEY = "형님의_GEMINI_API_KEY"
 
-from app.services.etf_service import get_all_registered_tickers
-
-def test_flow():
-    print("--- 테스트 시작: 종목 정보 키 확인 ---")
-    tickers = get_all_registered_tickers()
-    
-    if not tickers:
-        print("등록된 티커가 없습니다.")
-        return
-
-    # 첫 번째 티커 사용 (232080 -> 232080.KS)
-    test_ticker = f"{tickers[0]}.KS"
-    print(f"[대상 티커]: {test_ticker}")
-    
-    ticker_obj = yf.Ticker(test_ticker)
-    info = ticker_obj.info
-    
-    # 1. 이름 확인
-    name = info.get('shortName') or info.get('longName')
-    # 2. 가격 확인
-    price = info.get('regularMarketPrice') or info.get('currentPrice')
-    # 3. 설명 확인
-    desc = info.get('longBusinessSummary')
-    
-    print(f"\n--- 수집된 정보 ---")
-    print(f"이름(shortName/longName): {name}")
-    print(f"가격(regularMarketPrice/currentPrice): {price}")
-    print(f"설명(longBusinessSummary): {str(desc)[:100]}...")
-    
-    print(f"\n--- 사용 가능한 전체 키 목록 ---")
-    print(list(info.keys()))
+def test_api_connection():
+    try:
+        genai.configure(api_key="AIzaSyDUEPVkUDFXL1vBQh27c0w61_huIu4W6L8")
+        
+        # 1. 사용 가능한 모델 리스트 출력 (권한 확인)
+        print("--- 사용 가능한 모델 리스트 ---")
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                print(f"모델 이름: {m.name}")
+        
+        # 2. 간단한 응답 테스트 (연결 확인)
+        model = genai.GenerativeModel('models/gemini-3.5-flash')
+        response = model.generate_content("안녕, 지금 API 연결 테스트 중이야. 짧게 응답해줘.")
+        
+        print("\n--- 연결 테스트 결과 ---")
+        print(f"응답 내용: {response.text}")
+        print("\n성공: API 키가 정상적으로 작동합니다!")
+        
+    except Exception as e:
+        print(f"\n에러 발생: {e}")
+        print("API 키가 잘못되었거나 네트워크 문제일 수 있습니다. 다시 확인해주세요.")
 
 if __name__ == "__main__":
-    test_flow()
+    test_api_connection()
