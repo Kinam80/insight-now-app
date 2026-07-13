@@ -21,7 +21,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install google-genai supabase-py python-dotenv schedule
+          pip install google-genai supabase python-dotenv schedule
 
       - name: Run Report Generator
         env:
