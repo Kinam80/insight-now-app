@@ -20,3 +20,8 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     )
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# 뉴스 수집·관리 작업처럼 쓰기 권한이 필요한 서버 작업용 클라이언트입니다.
+# Secret key가 없으면 anon key를 사용하되, Supabase RLS에 따라 쓰기가 거부될 수 있습니다.
+SUPABASE_ADMIN_KEY = os.getenv("SUPABASE_SECRET_KEY") or SUPABASE_KEY
+supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_ADMIN_KEY)

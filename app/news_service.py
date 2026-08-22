@@ -2,7 +2,7 @@ import feedparser
 from groq import Groq
 from dotenv import load_dotenv
 import os
-from app.database import supabase
+from app.database import supabase_admin as supabase
 from datetime import datetime
 
 load_dotenv()

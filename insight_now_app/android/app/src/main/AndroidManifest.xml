@@ -30,6 +30,11 @@
             </intent-filter>
         </activity>
 
+        <!-- 개발·검증용 AdMob 테스트 App ID. 상업 출시 전 실제 App ID로 교체해야 합니다. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
