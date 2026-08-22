@@ -34,4 +34,4 @@ jobs:
           test -n "$GROQ_API_KEY"
 
       - name: Fetch and save news
-        run: python app/news_service.py
+        run: python -m app.news_service
