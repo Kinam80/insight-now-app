@@ -8,7 +8,7 @@ import yfinance as yf
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from apscheduler.schedulers.background import BackgroundScheduler
+
 from pydantic import BaseModel
 # 기존 import문들 아래에 추가
 from app.database import supabase
@@ -194,10 +194,8 @@ async def unregister_etf(ticker: str):
 def root():
     return {"message": "Insight Now API 서버 정상 작동 중 🚀"}
 
-# --- 스케줄러 & 시작 이벤트 ---
-scheduler = BackgroundScheduler()
-scheduler.add_job(fetch_and_save_news, "interval", hours=1)
-scheduler.start()
+# --- 시작 이벤트 ---
+# 뉴스 수집은 웹 요청 프로세스의 시작을 늦추지 않도록 별도 작업으로 운영합니다.
 
 @app.on_event("startup")
 async def startup_event():
@@ -215,7 +213,7 @@ async def startup_event():
 
 async def background_init():
     try:
-        await asyncio.to_thread(fetch_and_save_news)
+        # 외부 RSS/LLM 호출은 서버 시작 시 실행하지 않고, 실제 요청과 분리합니다.
         data = await asyncio.to_thread(fetch_market_data)
         if data:
             market_data_cache["data"] = data
