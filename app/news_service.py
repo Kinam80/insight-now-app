@@ -1,4 +1,5 @@
 import feedparser
+import requests
 from groq import Groq
 from dotenv import load_dotenv
 import os
@@ -72,7 +73,18 @@ def fetch_and_save_news():
     saved_count = 0
 
     for feed_info in RSS_FEEDS:
-        feed = feedparser.parse(feed_info["url"])
+        try:
+            response = requests.get(
+                feed_info["url"],
+                headers={"User-Agent": "InsightNow-NewsBot/1.0"},
+                timeout=20,
+            )
+            response.raise_for_status()
+            feed = feedparser.parse(response.content)
+            print(f"📡 {feed_info['category']}: {len(feed.entries)}개 RSS 항목 확인")
+        except Exception as exc:
+            print(f"⚠️ RSS 수집 실패 ({feed_info['category']}): {exc}")
+            continue
 
         for entry in feed.entries[:5]:
             title = entry.get("title", "")
