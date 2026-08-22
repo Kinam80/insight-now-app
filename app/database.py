@@ -1,19 +1,18 @@
-from supabase import create_client, Client
-from dotenv import load_dotenv
 import os
+
+from dotenv import load_dotenv
+from supabase import Client, create_client
 
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY")
+# 기존 배포 설정과의 호환성을 위해 두 이름을 모두 지원합니다.
+SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_ANON_KEY")
 
-# ✅ 수정: ClientOptions 객체를 명시적으로 생성하지 않고, 
-# 라이브러리가 지원하는 방식으로 타임아웃을 설정합니다.
-# 최신 supabase-py 라이브러리는 options 인자에서 복잡한 중첩 객체 대신 
-# 단순화된 설정을 지원합니다. 
-# 만약 여전히 에러가 난다면, options={} 빈 딕셔너리로 초기화하세요.
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError(
+        "Supabase 환경변수가 없습니다. SUPABASE_URL과 "
+        "SUPABASE_SECRET_KEY 또는 SUPABASE_ANON_KEY를 설정하세요."
+    )
 
-supabase: Client = create_client(
-    SUPABASE_URL, 
-    SUPABASE_SECRET_KEY
-)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)

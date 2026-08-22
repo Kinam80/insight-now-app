@@ -2,6 +2,7 @@ import os
 import time
 import math
 import asyncio
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 import yfinance as yf
 from fastapi import FastAPI, HTTPException
@@ -23,6 +24,17 @@ from app.news_service import fetch_and_save_news
 load_dotenv()
 
 app = FastAPI(title="Insight Now API", version="1.0.0")
+
+
+@app.get("/health", include_in_schema=False)
+async def health_check():
+    """Render health check 및 외부 모니터링용 경량 엔드포인트입니다."""
+    return {
+        "status": "ok",
+        "service": "insight-now-api",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
 
 # --- CORS 설정 ---
 app.add_middleware(

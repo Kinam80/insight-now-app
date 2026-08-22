@@ -1,0 +1,36 @@
+name: Render Health Check
+
+on:
+  schedule:
+    # GitHub Actions cron은 UTC 기준이며 실행 시각이 지연될 수 있습니다.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+env:
+  HEALTH_URL: ${{ vars.RENDER_HEALTH_URL }}
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Validate health-check URL
+        run: |
+          if [ -z "$HEALTH_URL" ]; then
+            echo "Repository variable RENDER_HEALTH_URL is not configured."
+            exit 1
+          fi
+
+      - name: Call Render health endpoint
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status_code="$(curl --fail-with-body --silent --show-error \
+            --connect-timeout 10 --max-time 30 \
+            --retry 2 --retry-delay 3 \
+            --output "$response_file" --write-out '%{http_code}' \
+            "$HEALTH_URL")"
+          echo "HTTP status: $status_code"
+          cat "$response_file"
+          test "$status_code" -ge 200
+          test "$status_code" -lt 400
