@@ -7,7 +7,11 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 # 기존 배포 설정과의 호환성을 위해 두 이름을 모두 지원합니다.
-SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_ANON_KEY")
+SUPABASE_KEY = (
+    os.getenv("SUPABASE_KEY")
+    or os.getenv("SUPABASE_ANON_KEY")
+    or os.getenv("SUPABASE_SECRET_KEY")
+)
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError(
