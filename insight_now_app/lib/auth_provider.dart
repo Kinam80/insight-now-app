@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'constants/api_constants.dart';
 import 'navigation.dart';
@@ -37,19 +38,32 @@ class AuthProvider with ChangeNotifier {
     String password, {
     bool rememberMe = false,
   }) async {
-    final response = await http.post(
-      Uri.parse(ApiConstants.loginEndpoint),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email, 'password': password}),
-    );
+    String? accessToken;
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('로그인에 실패했습니다.');
+    // 기존 FastAPI 로그인 응답을 우선 사용합니다.
+    try {
+      final response = await http.post(
+        Uri.parse(ApiConstants.loginEndpoint),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email, 'password': password}),
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final data =
+            jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+        accessToken = data['access_token'] as String?;
+      }
+    } catch (_) {
+      // 배포 API가 일시적으로 응답하지 않아도 Supabase 인증을 시도합니다.
     }
 
-    final data =
-        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-    final accessToken = data['access_token'] as String?;
+    // FastAPI의 저장 해시가 오래된 경우에도 Supabase Auth 로그인은 계속 지원합니다.
+    if (accessToken == null || accessToken.isEmpty) {
+      final authResponse = await Supabase.instance.client.auth
+          .signInWithPassword(email: email, password: password);
+      accessToken = authResponse.session?.accessToken;
+    }
+
     if (accessToken == null || accessToken.isEmpty) {
       throw Exception('로그인 토큰이 없습니다.');
     }

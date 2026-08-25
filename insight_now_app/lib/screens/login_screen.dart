@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../auth_provider.dart';
 import 'register_screen.dart';
@@ -46,6 +47,27 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _requestPasswordReset() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      _showErrorDialog('비밀번호를 재설정할 이메일을 먼저 입력해주세요.');
+      return;
+    }
+
+    try {
+      await Supabase.instance.client.auth.resetPasswordForEmail(email);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('비밀번호 재설정 이메일을 발송했습니다.')));
+      }
+    } catch (_) {
+      if (mounted) {
+        _showErrorDialog('재설정 이메일을 발송하지 못했습니다. 잠시 후 다시 시도해주세요.');
+      }
     }
   }
 
@@ -170,22 +192,34 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        CheckboxListTile(
-                          title: const Text(
-                            '로그인 상태 유지',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          value: _isRememberMe,
-                          onChanged: _isSubmitting
-                              ? null
-                              : (value) => setState(
-                                  () => _isRememberMe = value ?? false,
-                                ),
-                          controlAffinity: ListTileControlAffinity.leading,
-                          contentPadding: EdgeInsets.zero,
-                          activeColor: const Color(0xFF0D4D78),
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: _isRememberMe,
+                              onChanged: _isSubmitting
+                                  ? null
+                                  : (value) => setState(
+                                      () => _isRememberMe = value ?? false,
+                                    ),
+                              activeColor: const Color(0xFF0D4D78),
+                            ),
+                            const SizedBox(width: 4),
+                            const Text(
+                              '로그인 상태 유지',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 12),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: _isSubmitting
+                                ? null
+                                : _requestPasswordReset,
+                            child: const Text('비밀번호를 잊으셨나요?'),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
                         SizedBox(
                           height: 52,
                           child: ElevatedButton(
