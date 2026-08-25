@@ -3,6 +3,7 @@ import time
 import math
 import asyncio
 from datetime import datetime, timezone
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 import yfinance as yf
 from fastapi import FastAPI, HTTPException
@@ -66,6 +67,17 @@ class EtfRegistration(BaseModel):
 
 # --- 시장 데이터 캐시 ---
 market_data_cache = {"data": [], "last_updated": 0}
+news_scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
+
+
+async def refresh_news_in_background():
+    """RSS/LLM 작업을 웹 요청과 분리해 뉴스 저장소를 갱신합니다."""
+    try:
+        saved_count = await asyncio.to_thread(fetch_and_save_news)
+        print(f"📰 뉴스 수집 작업 완료: {saved_count}개 저장")
+    except Exception as exc:
+        print(f"⚠️ 뉴스 수집 작업 실패: {exc}")
+
 
 def fetch_market_data():
     tickers = {
@@ -203,13 +215,33 @@ async def startup_event():
     
     # 1. 초기 데이터 로드
     asyncio.create_task(background_init())
+
+    # 2. 뉴스는 별도 작업으로 즉시 한 번 수집하고, 이후 매시간 갱신합니다.
+    if not news_scheduler.running:
+        news_scheduler.add_job(
+            refresh_news_in_background,
+            trigger="interval",
+            hours=1,
+            id="refresh_news",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+        news_scheduler.start()
+    asyncio.create_task(refresh_news_in_background())
     
-    # 2. 경로 출력
+    # 3. 경로 출력
     print("--- 📋 현재 등록된 API 경로 목록 ---")
     for route in app.routes:
         if hasattr(route, "methods"):
             print(f"{list(route.methods)} : {route.path}")
     print("----------------------------------")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    if news_scheduler.running:
+        news_scheduler.shutdown(wait=False)
+
 
 async def background_init():
     try:

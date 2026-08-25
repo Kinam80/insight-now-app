@@ -2,17 +2,35 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'constants/api_constants.dart';
 import 'navigation.dart';
+import 'screens/login_screen.dart';
 
 class AuthProvider with ChangeNotifier {
   bool _isAuthenticated = false;
+  bool _isInitializing = true;
   String? _token;
 
   bool get isAuthenticated => _isAuthenticated;
+  bool get isInitializing => _isInitializing;
   String? get token => _token;
+
+  Future<void> restoreSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedToken = prefs.getString('auth_token');
+      if (savedToken != null && savedToken.isNotEmpty) {
+        _token = savedToken;
+        _isAuthenticated = true;
+      }
+    } finally {
+      _isInitializing = false;
+      notifyListeners();
+    }
+  }
 
   Future<void> login(
     String email,
@@ -29,7 +47,8 @@ class AuthProvider with ChangeNotifier {
       throw Exception('로그인에 실패했습니다.');
     }
 
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final data =
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     final accessToken = data['access_token'] as String?;
     if (accessToken == null || accessToken.isEmpty) {
       throw Exception('로그인 토큰이 없습니다.');
@@ -39,10 +58,10 @@ class AuthProvider with ChangeNotifier {
     _isAuthenticated = true;
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('auth_token', accessToken);
-    if (!rememberMe) {
-      // 현재 앱 구조에서는 세션 사용을 위해 토큰을 저장하되,
-      // 다음 단계에서 앱 재시작 시 유지 여부를 별도로 정리합니다.
+    if (rememberMe) {
+      await prefs.setString('auth_token', accessToken);
+    } else {
+      await prefs.remove('auth_token');
     }
     notifyListeners();
   }
@@ -56,11 +75,33 @@ class AuthProvider with ChangeNotifier {
   }
 }
 
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
 
   @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() => context.read<AuthProvider>().restoreSession());
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return const MainNavigationScreen();
+    return Consumer<AuthProvider>(
+      builder: (context, auth, _) {
+        if (auth.isInitializing) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return auth.isAuthenticated
+            ? const MainNavigationScreen()
+            : const LoginScreen();
+      },
+    );
   }
 }
