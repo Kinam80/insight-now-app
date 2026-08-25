@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../auth_provider.dart';
 import 'register_screen.dart';
 
@@ -13,25 +14,38 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  bool _isRememberMe = false; // [추가됨] 로그인 상태 유지 체크박스 변수
+  bool _isRememberMe = false;
+  bool _isSubmitting = false;
 
-  // [수정됨] async로 변경하여 비동기 처리
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
   Future<void> _handleLogin() async {
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-      _showErrorDialog("이메일과 비밀번호를 모두 입력해주세요.");
+    if (_isSubmitting) return;
+
+    if (_emailController.text.trim().isEmpty ||
+        _passwordController.text.isEmpty) {
+      _showErrorDialog('이메일과 비밀번호를 모두 입력해주세요.');
       return;
     }
-    
+
+    setState(() => _isSubmitting = true);
     try {
-      // [수정됨] 체크박스 상태(_isRememberMe)를 AuthProvider의 login 함수로 전달
-      await Provider.of<AuthProvider>(context, listen: false)
-          .login(
-            _emailController.text,
-            _passwordController.text,
-            rememberMe: _isRememberMe,
-          );
-    } catch (e) {
-      _showErrorDialog("로그인에 실패했습니다.");
+      await context.read<AuthProvider>().login(
+        _emailController.text.trim(),
+        _passwordController.text,
+        rememberMe: _isRememberMe,
+      );
+    } catch (_) {
+      if (mounted) {
+        _showErrorDialog('이메일 또는 비밀번호를 다시 확인해주세요.');
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -39,10 +53,13 @@ class _LoginScreenState extends State<LoginScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("로그인 실패"),
+        title: const Text('로그인 실패'),
         content: Text(message),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("확인")),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('확인'),
+          ),
         ],
       ),
     );
@@ -51,50 +68,193 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text("로그인", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 30),
-              TextField(
-                controller: _emailController, 
-                decoration: const InputDecoration(labelText: "이메일", border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 15),
-              TextField(
-                controller: _passwordController, 
-                decoration: const InputDecoration(labelText: "비밀번호", border: OutlineInputBorder()), 
-                obscureText: true,
-              ),
-              // [추가됨] 로그인 상태 유지 체크박스 UI 부분
-              CheckboxListTile(
-                title: const Text("로그인 상태 유지"),
-                value: _isRememberMe,
-                onChanged: (value) => setState(() => _isRememberMe = value!),
-                controlAffinity: ListTileControlAffinity.leading,
-                contentPadding: EdgeInsets.zero,
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _handleLogin,
-                child: const Text("로그인"),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const RegisterScreen()),
-                  );
-                },
-                child: const Text("회원가입 하러가기"),
-              ),
-            ],
+      resizeToAvoidBottomInset: true,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(
+            'assets/images/login_finance_taegeuk.png',
+            fit: BoxFit.cover,
           ),
-        ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  const Color(0xFF071827).withOpacity(0.28),
+                  const Color(0xFF071827).withOpacity(0.52),
+                  const Color(0xFF030B14).withOpacity(0.76),
+                ],
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 430),
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.90),
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(color: Colors.white.withOpacity(0.55)),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x88000000),
+                          blurRadius: 32,
+                          offset: Offset(0, 16),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Icon(
+                          Icons.account_balance,
+                          color: Color(0xFF0D4D78),
+                          size: 34,
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'INSIGHT NOW',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Color(0xFF0C3F65),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 2.4,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '로그인',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Color(0xFF101828),
+                            fontSize: 30,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          '시장 흐름을 읽는 금융 인사이트',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Color(0xFF667085),
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        TextField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          autofillHints: const [AutofillHints.username],
+                          decoration: _inputDecoration(
+                            '이메일',
+                            Icons.mail_outline,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: _passwordController,
+                          obscureText: true,
+                          autofillHints: const [AutofillHints.password],
+                          onSubmitted: (_) => _handleLogin(),
+                          decoration: _inputDecoration(
+                            '비밀번호',
+                            Icons.lock_outline,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        CheckboxListTile(
+                          title: const Text(
+                            '로그인 상태 유지',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          value: _isRememberMe,
+                          onChanged: _isSubmitting
+                              ? null
+                              : (value) => setState(
+                                  () => _isRememberMe = value ?? false,
+                                ),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          contentPadding: EdgeInsets.zero,
+                          activeColor: const Color(0xFF0D4D78),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: 52,
+                          child: ElevatedButton(
+                            onPressed: _isSubmitting ? null : _handleLogin,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0D4D78),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: _isSubmitting
+                                ? const SizedBox(
+                                    height: 22,
+                                    width: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    '로그인',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextButton(
+                          onPressed: _isSubmitting
+                              ? null
+                              : () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const RegisterScreen(),
+                                    ),
+                                  );
+                                },
+                          child: const Text('회원가입 하러가기'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, color: const Color(0xFF0D4D78)),
+      filled: true,
+      fillColor: const Color(0xFFF8FAFC),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFF0D4D78), width: 1.5),
       ),
     );
   }
