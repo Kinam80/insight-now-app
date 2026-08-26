@@ -108,9 +108,15 @@ class _DetailScreenState extends State<DetailScreen> {
     final data = _data!;
     final isEtf = widget.etfData != null || widget.ticker != null;
     final name = data['name'] ?? '종목명 없음';
-    final price = data['price'] ?? 0;
-    final weight = data['weight'] ?? 0;
-    final description = data['description'] ?? '상세 설명 없음';
+    final ticker = (data['ticker'] ?? widget.ticker ?? '')
+        .toString()
+        .toUpperCase();
+    final price = data['price'];
+    final weight = data['weight'];
+    final description =
+        (data['description']?.toString().trim().isNotEmpty ?? false)
+        ? data['description'].toString()
+        : _fallbackEtfDescription(ticker, name.toString());
     final isLocked = !isEtf && data['is_locked'] == true;
 
     return Scaffold(
@@ -139,17 +145,40 @@ class _DetailScreenState extends State<DetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '현재가: ₩$price',
+                          ticker,
+                          style: const TextStyle(
+                            color: Color(0xFF7DECE2),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '현재가: ${_formatEtfPrice(price, ticker)}',
                           style: const TextStyle(
                             fontSize: 18,
                             color: Colors.greenAccent,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
+                        const SizedBox(height: 4),
                         Text(
-                          '비중: $weight%',
+                          weight == null || weight == 0
+                              ? 'Yahoo Finance 자동 동기화 종목'
+                              : '포트폴리오 비중: $weight%',
                           style: const TextStyle(
-                            fontSize: 18,
+                            fontSize: 14,
                             color: Colors.white70,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        const Text(
+                          'ETF 상세 설명',
+                          style: TextStyle(
+                            color: Color(0xFFFFD166),
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                         const SizedBox(height: 10),
@@ -180,6 +209,29 @@ class _DetailScreenState extends State<DetailScreen> {
               ),
       ),
     );
+  }
+
+  String _formatEtfPrice(dynamic rawPrice, String ticker) {
+    final price = rawPrice is num
+        ? rawPrice.toDouble()
+        : double.tryParse('$rawPrice');
+    if (price == null) return '가격 업데이트 대기';
+    final isKoreanTicker = RegExp(r'^\d{6}(?:\.K[QS])?$').hasMatch(ticker);
+    final currency = isKoreanTicker ? '₩ ' : r'$ ';
+    return '$currency${price.toStringAsFixed(price >= 100 ? 2 : 4)}';
+  }
+
+  String _fallbackEtfDescription(String ticker, String name) {
+    return '''## $ticker ETF 한눈에 보기
+
+**$name**은(는) 자동 동기화된 ETF입니다.
+
+### 투자 전 확인하세요
+- 어떤 지수·산업·자산을 추종하는지
+- 총보수와 거래량이 적절한지
+- 편입 종목과 분배 정책이 내 투자 목적에 맞는지
+
+> 상세 설명은 다음 자동 갱신에서 최신 ETF 정보와 함께 보강됩니다.''';
   }
 
   Widget _buildLockedContent(Map<String, dynamic> data) {

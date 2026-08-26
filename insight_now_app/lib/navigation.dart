@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'tabs/market_index_tab.dart';    // 1. 상단 슬라이더 시황
-import 'tabs/news_tab.dart';            // 2. 토스 스타일 뉴스
-import 'tabs/etf_tab.dart';             // 3. ETF 백과사전
-import 'tabs/gov_stats_tab.dart';       // 4. 정부 지표/분석
+import 'tabs/market_index_tab.dart'; // 1. 상단 슬라이더 시황
+import 'tabs/news_tab.dart'; // 2. 토스 스타일 뉴스
+import 'tabs/etf_tab.dart'; // 3. ETF 백과사전
+import 'tabs/gov_stats_tab.dart'; // 4. 정부 지표/분석
+import 'tabs/settings_tab.dart'; // 5. 환경설정
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -19,6 +20,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     const NewsTab(),
     const EtfTab(),
     const GovStatsTab(),
+    const SettingsTab(),
   ];
 
   @override
@@ -36,7 +38,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.analytics), label: '지수'),
           BottomNavigationBarItem(icon: Icon(Icons.newspaper), label: '뉴스'),
           BottomNavigationBarItem(icon: Icon(Icons.pie_chart), label: 'ETF'),
-          BottomNavigationBarItem(icon: Icon(Icons.account_balance), label: '지표'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.account_balance),
+            label: '지표',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings_rounded),
+            label: '설정',
+          ),
         ],
       ),
     );

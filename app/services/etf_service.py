@@ -38,6 +38,40 @@ def _quote_price(quote: dict[str, Any]) -> float | None:
     return None
 
 
+def _korean_etf_description(ticker: str, name: str) -> str:
+    """ETF 공식 명칭을 기반으로 앱 상세 화면에 표시할 한국어 안내문을 만듭니다."""
+    normalized_name = name.lower()
+    theme_map = [
+        (("semiconductor", "chip"), "반도체·AI 인프라"),
+        (("technology", "tech", "software", "cloud"), "기술·소프트웨어"),
+        (("gold", "silver", "metal", "miners"), "귀금속·광산"),
+        (("energy", "oil", "gas", "uranium"), "에너지·원자재"),
+        (("treasury", "bond", "income"), "채권·인컴"),
+        (("bank", "financial"), "금융"),
+        (("health", "biotech", "medical"), "헬스케어·바이오"),
+        (("real estate", "reit", "property"), "부동산"),
+        (("china", "korea", "india", "japan", "emerging"), "국가·신흥시장"),
+        (("dividend", "quality", "value"), "배당·가치"),
+        (("bitcoin", "crypto", "blockchain"), "디지털자산·블록체인"),
+    ]
+    theme = next(
+        (label for keywords, label in theme_map if any(keyword in normalized_name for keyword in keywords)),
+        "글로벌 주식시장",
+    )
+    market_label = "국내 상장 ETF" if ticker.isdigit() and len(ticker) == 6 else "해외 상장 ETF"
+    return f"""## {ticker} ETF 한눈에 보기
+
+**{name}**은(는) {theme} 흐름에 투자하는 {market_label}입니다.
+
+### 무엇을 확인해야 하나요?
+- **추종 대상:** ETF가 어떤 지수·산업·자산을 따라가는지 확인하세요.
+- **변동 요인:** 관련 업종 실적, 금리, 환율 및 원자재 가격이 수익률에 영향을 줄 수 있습니다.
+- **투자 전 점검:** 총보수, 거래량, 편입 종목 비중과 분배 정책을 함께 비교하세요.
+
+> 이 설명은 투자 권유가 아닌 기본 학습 정보입니다. 실제 투자 전에는 운용사의 최신 투자설명서와 구성 종목을 확인하세요.
+"""
+
+
 def _save_by_ticker(table_name: str, payload: dict[str, Any]) -> Any:
     """유니크 제약이 없는 레거시 테이블에서도 중복 없이 티커 행을 저장합니다."""
     ticker = str(payload["ticker"]).upper()
@@ -56,7 +90,13 @@ def update_etf_data_by_ticker(ticker_symbol: str) -> dict[str, Any]:
         info = ticker.info or {}
         price = info.get("regularMarketPrice") or info.get("currentPrice")
         name = info.get("shortName") or info.get("longName") or ticker_symbol
-        payload = {"ticker": ticker_symbol.upper(), "name": name, "price": price}
+        normalized_ticker = ticker_symbol.upper()
+        payload = {
+            "ticker": normalized_ticker,
+            "name": name,
+            "price": price,
+            "description": _korean_etf_description(normalized_ticker, str(name)),
+        }
         response = _save_by_ticker("etf_data", payload)
         return {"status": "success", "ticker": ticker_symbol.upper(), "data": response.data}
     except Exception as exc:
@@ -120,7 +160,13 @@ def refresh_etf_universe(limit: int = 100) -> dict[str, Any]:
             )
             registered += 1
             _save_by_ticker(
-                "etf_data", {"ticker": ticker, "name": name, "price": price}
+                "etf_data",
+                {
+                    "ticker": ticker,
+                    "name": name,
+                    "price": price,
+                    "description": _korean_etf_description(ticker, name),
+                },
             )
             updated += 1
         except Exception as exc:

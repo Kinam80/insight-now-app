@@ -6,6 +6,7 @@ python-jose[cryptography]>=3.3.0
 bcrypt>=4.0.1
 pydantic[email]>=2.6.0
 google-genai>=1.0.0
+groq>=0.11.0
 feedparser>=6.0.10
 beautifulsoup4>=4.12.0
 
