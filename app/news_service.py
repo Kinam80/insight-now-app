@@ -170,7 +170,6 @@ def fetch_and_save_news() -> int:
                 supabase.table("ai_news").insert({
                     "title": summary_data["headline"],
                     "summary": summary_data["summary"],
-                    "content": f"원문 제목: {title}",
                     "source_url": source_url,
                     "source_name": publisher,
                     "category": source["category"],
