@@ -5,7 +5,7 @@ from typing import Any
 import requests
 import yfinance as yf
 
-from app.database import supabase
+from app.database import supabase_admin as supabase
 
 YAHOO_ETF_SCREENER_URL = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
 REQUEST_HEADERS = {
