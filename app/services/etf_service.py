@@ -7,10 +7,18 @@ import yfinance as yf
 
 from app.database import supabase_admin as supabase
 
-YAHOO_ETF_SCREENER_URL = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
+YAHOO_ETF_SCREENER_URLS = (
+    "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved",
+    "https://query2.finance.yahoo.com/v1/finance/screener/predefined/saved",
+)
 REQUEST_HEADERS = {
-    "User-Agent": "InsightNow/1.0 (+https://insight-now-app.onrender.com)",
-    "Accept": "application/json",
+    # Yahoo의 공개 엔드포인트는 봇성 커스텀 UA를 간헐적으로 거부하므로 표준 브라우저 요청 형식을 사용합니다.
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
 
@@ -47,24 +55,41 @@ def update_etf_data_by_ticker(ticker_symbol: str) -> dict[str, Any]:
 
 def discover_top_etfs(limit: int = 100) -> list[dict[str, Any]]:
     """Yahoo Finance 공개 ETF 스크리너에서 유동성 높은 ETF 목록을 가져옵니다."""
-    response = requests.get(
-        YAHOO_ETF_SCREENER_URL,
-        params={"formatted": "false", "scrIds": "top_etfs_us", "count": min(max(limit, 1), 250)},
-        headers=REQUEST_HEADERS,
-        timeout=25,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    results = payload.get("finance", {}).get("result", [])
-    if not results:
-        return []
+    request_params = {
+        "formatted": "false",
+        "scrIds": "top_etfs_us",
+        "count": min(max(limit, 1), 250),
+    }
+    last_error: requests.RequestException | None = None
 
-    quotes = results[0].get("quotes", [])
-    return [
-        quote
-        for quote in quotes
-        if quote.get("symbol") and (quote.get("quoteType") in (None, "ETF"))
-    ]
+    for endpoint in YAHOO_ETF_SCREENER_URLS:
+        try:
+            response = requests.get(
+                endpoint,
+                params=request_params,
+                headers=REQUEST_HEADERS,
+                timeout=25,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            results = payload.get("finance", {}).get("result", [])
+            if not results:
+                continue
+            quotes = results[0].get("quotes", [])
+            discovered = [
+                quote
+                for quote in quotes
+                if quote.get("symbol") and (quote.get("quoteType") in (None, "ETF"))
+            ]
+            if discovered:
+                return discovered
+        except requests.RequestException as exc:
+            last_error = exc
+            continue
+
+    if last_error:
+        raise last_error
+    return []
 
 
 def refresh_etf_universe(limit: int = 100) -> dict[str, Any]:
