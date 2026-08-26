@@ -106,6 +106,7 @@ def _community_snapshot(limit: int = 40) -> dict[str, Any]:
 
     reaction_map: dict[str, dict[str, int]] = {}
     comment_count: dict[str, int] = {}
+    comment_map: dict[str, list[dict[str, Any]]] = {}
     for reaction in reactions:
         post_id = str(reaction.get("post_id") or "")
         emoji = str(reaction.get("reaction") or "")
@@ -117,6 +118,14 @@ def _community_snapshot(limit: int = 40) -> dict[str, Any]:
         post_id = str(comment.get("post_id") or "")
         if post_id:
             comment_count[post_id] = comment_count.get(post_id, 0) + 1
+            comment_map.setdefault(post_id, []).append(
+                {
+                    "id": str(comment.get("id") or ""),
+                    "nickname": str(comment.get("nickname") or "익명 개미"),
+                    "body": str(comment.get("body") or ""),
+                    "created_at": comment.get("created_at"),
+                }
+            )
 
     now = datetime.now(timezone.utc)
     feed: list[dict[str, Any]] = []
@@ -143,6 +152,7 @@ def _community_snapshot(limit: int = 40) -> dict[str, Any]:
                 "reactions": counts,
                 "reaction_total": reaction_total,
                 "comment_count": comment_count.get(post_id, 0),
+                "comments": list(reversed(comment_map.get(post_id, [])))[:30],
                 "trending_score": score,
             }
         )

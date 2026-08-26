@@ -89,6 +89,18 @@ class _CommunityTabState extends State<CommunityTab>
     }
   }
 
+  Future<void> _openDiscussion(_CommunityPost post) async {
+    final updated = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _DiscussionSheet(post: post),
+    );
+    if (updated == true) {
+      await _reload(silent: true);
+    }
+  }
+
   Future<void> _openComposer({String initialKind = 'proof'}) async {
     final posted = await showModalBottomSheet<bool>(
       context: context,
@@ -416,15 +428,32 @@ class _CommunityTabState extends State<CommunityTab>
               const SizedBox(width: 7),
               _reactionButton(post, '📌', '저장'),
               const Spacer(),
-              Icon(
-                Icons.chat_bubble_outline_rounded,
-                color: Colors.white38,
-                size: 16,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                '${post.commentCount}',
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              InkWell(
+                onTap: () => _openDiscussion(post),
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 5,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        color: Colors.white38,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${post.commentCount} 대화',
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
@@ -793,6 +822,207 @@ class _CommunitySnapshot {
   }
 }
 
+class _DiscussionSheet extends StatefulWidget {
+  const _DiscussionSheet({required this.post});
+
+  final _CommunityPost post;
+
+  @override
+  State<_DiscussionSheet> createState() => _DiscussionSheetState();
+}
+
+class _DiscussionSheetState extends State<_DiscussionSheet> {
+  final _nickname = TextEditingController(text: '투자러');
+  final _comment = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _nickname.dispose();
+    _comment.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_nickname.text.trim().length < 2 || _comment.text.trim().isEmpty) {
+      return;
+    }
+    setState(() => _submitting = true);
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${ApiConstants.baseUrl}/api/chat/community/comments'),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'nickname': _nickname.text.trim(),
+              'post_id': widget.post.id,
+              'body': _comment.text.trim(),
+            }),
+          )
+          .timeout(const Duration(seconds: 18));
+      if (response.statusCode >= 300) {
+        throw Exception();
+      }
+      if (mounted) {
+        Navigator.pop(context, true);
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('대화를 남기지 못했습니다. 잠시 후 다시 시도해 주세요.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(12, 36, 12, bottom + 12),
+      child: Material(
+        color: const Color(0xFF10233B),
+        borderRadius: BorderRadius.circular(24),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.forum_rounded, color: Color(0xFF4FD1C5)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${widget.post.nickname}의 투자 이야기',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.white54,
+                    ),
+                  ),
+                ],
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  widget.post.body,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white60, height: 1.4),
+                ),
+              ),
+              const Divider(color: Colors.white12, height: 24),
+              Expanded(
+                child: widget.post.comments.isEmpty
+                    ? const Center(
+                        child: Text(
+                          '첫 번째 대화를 남겨 보세요.',
+                          style: TextStyle(color: Colors.white54),
+                        ),
+                      )
+                    : ListView.separated(
+                        itemCount: widget.post.comments.length,
+                        separatorBuilder: (_, _) =>
+                            const Divider(color: Colors.white10, height: 20),
+                        itemBuilder: (context, index) {
+                          final comment = widget.post.comments[index];
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${comment.nickname} · ${comment.timeAgo}',
+                                style: const TextStyle(
+                                  color: Color(0xFF4FD1C5),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                comment.body,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  height: 1.42,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+              ),
+              const Divider(color: Colors.white12, height: 20),
+              TextField(
+                controller: _nickname,
+                maxLength: 18,
+                style: const TextStyle(color: Colors.white),
+                decoration: _inputDecoration('표시 이름'),
+              ),
+              const SizedBox(height: 5),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _comment,
+                      maxLength: 400,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: _inputDecoration('건설적인 대화를 남겨 주세요.'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    onPressed: _submitting ? null : _submit,
+                    style: IconButton.styleFrom(
+                      backgroundColor: const Color(0xFFF6C85F),
+                      foregroundColor: const Color(0xFF172030),
+                    ),
+                    icon: _submitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.send_rounded),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String label) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(color: Colors.white54),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Colors.white24),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF4FD1C5)),
+      ),
+      counterStyle: const TextStyle(color: Colors.white38),
+      isDense: true,
+    );
+  }
+}
+
 class _CommunityPost {
   const _CommunityPost({
     required this.id,
@@ -804,6 +1034,7 @@ class _CommunityPost {
     required this.createdAt,
     required this.reactions,
     required this.commentCount,
+    required this.comments,
   });
 
   final String id;
@@ -815,6 +1046,7 @@ class _CommunityPost {
   final DateTime? createdAt;
   final Map<String, int> reactions;
   final int commentCount;
+  final List<_CommunityComment> comments;
 
   factory _CommunityPost.fromJson(Map<String, dynamic> json) {
     final rawReactions = json['reactions'];
@@ -824,6 +1056,16 @@ class _CommunityPost {
         reactions[entry.key.toString()] = (entry.value as num?)?.toInt() ?? 0;
       }
     }
+    final rawComments = json['comments'];
+    final comments = rawComments is List
+        ? rawComments
+              .whereType<Map>()
+              .map(
+                (item) =>
+                    _CommunityComment.fromJson(Map<String, dynamic>.from(item)),
+              )
+              .toList()
+        : const <_CommunityComment>[];
     return _CommunityPost(
       id: json['id']?.toString() ?? '',
       kind: json['kind']?.toString() ?? 'lounge',
@@ -836,12 +1078,47 @@ class _CommunityPost {
       )?.toLocal(),
       reactions: reactions,
       commentCount: (json['comment_count'] as num?)?.toInt() ?? 0,
+      comments: comments,
     );
   }
 
   String get performanceLabel => performance == null
       ? ''
       : '${performance! >= 0 ? '+' : ''}${performance!.toStringAsFixed(1)}%';
+
+  String get timeAgo {
+    if (createdAt == null) return '방금 전';
+    final difference = DateTime.now().difference(createdAt!);
+    if (difference.inDays > 0) return '${difference.inDays}일 전';
+    if (difference.inHours > 0) return '${difference.inHours}시간 전';
+    if (difference.inMinutes > 0) return '${difference.inMinutes}분 전';
+    return '방금 전';
+  }
+}
+
+class _CommunityComment {
+  const _CommunityComment({
+    required this.id,
+    required this.nickname,
+    required this.body,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String nickname;
+  final String body;
+  final DateTime? createdAt;
+
+  factory _CommunityComment.fromJson(Map<String, dynamic> json) {
+    return _CommunityComment(
+      id: json['id']?.toString() ?? '',
+      nickname: json['nickname']?.toString() ?? '익명 개미',
+      body: json['body']?.toString() ?? '',
+      createdAt: DateTime.tryParse(
+        json['created_at']?.toString() ?? '',
+      )?.toLocal(),
+    );
+  }
 
   String get timeAgo {
     if (createdAt == null) return '방금 전';
