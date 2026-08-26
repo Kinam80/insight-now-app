@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Query, HTTPException
-from app.database import supabase
+from app.database import supabase_admin as supabase
+
 from datetime import datetime, timedelta
 from dateutil import parser
 
