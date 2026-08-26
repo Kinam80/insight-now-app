@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // 실시간 기능을 위해 추가
+
 import '../models/market_index.dart';
 import '../services/api_service.dart';
 import '../screens/detail_screen.dart'; // 상세 페이지 연결을 위해 추가함
@@ -17,25 +17,24 @@ class MarketIndexTab extends StatefulWidget {
   State<MarketIndexTab> createState() => _MarketIndexTabState();
 }
 
-class _MarketIndexTabState extends State<MarketIndexTab> with SingleTickerProviderStateMixin {
+class _MarketIndexTabState extends State<MarketIndexTab>
+    with SingleTickerProviderStateMixin {
   late Future<List<MarketIndex>> _marketData;
   late TabController _tabController;
-  
+
   // 부드러운 스크롤을 위한 컨트롤러
   final ScrollController _scrollController = ScrollController();
   Timer? _timer;
 
-  // [실시간 핵심] 데이터를 계속 감시하는 스트림
-  // [수정 후 - 훨씬 명확하게 전체 테이블 변경 감지]
-  final Stream<List<Map<String, dynamic>>> _postsStream = Supabase.instance.client
-      .from('analysis_posts')
-      .stream(primaryKey: ['id'])
-      .order('published_at', ascending: false); // order는 여기서 유지
+  // 게시글은 서버 API로 조회합니다. 직접 Supabase 스트림은 로그인 사용자별
+  // RLS 정책에 따라 공개 레포트가 누락될 수 있으므로 사용하지 않습니다.
+  late Future<List<dynamic>> _postsData;
 
   @override
   void initState() {
     super.initState();
     _marketData = ApiService.fetchMarketIndices();
+    _postsData = ApiService.fetchPosts();
     _tabController = TabController(length: 2, vsync: this);
 
     // 0.05초마다 1픽셀씩 이동하는 기차 스크롤
@@ -75,24 +74,34 @@ class _MarketIndexTabState extends State<MarketIndexTab> with SingleTickerProvid
                 child: FutureBuilder<List<MarketIndex>>(
                   future: _marketData,
                   builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: goldAccent));
-                    if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text("지수 데이터 없음", style: TextStyle(color: Colors.white)));
-                    
+                    if (snapshot.connectionState == ConnectionState.waiting)
+                      return const Center(
+                        child: CircularProgressIndicator(color: goldAccent),
+                      );
+                    if (!snapshot.hasData || snapshot.data!.isEmpty)
+                      return const Center(
+                        child: Text(
+                          "지수 데이터 없음",
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      );
+
                     return ListView.builder(
                       controller: _scrollController,
                       scrollDirection: Axis.horizontal,
                       physics: const BouncingScrollPhysics(),
                       itemBuilder: (context, index) {
-                        final item = snapshot.data![index % snapshot.data!.length];
+                        final item =
+                            snapshot.data![index % snapshot.data!.length];
                         return _buildMarketCard(item);
                       },
                     );
                   },
                 ),
               ),
-              
+
               const SizedBox(height: 30),
-              
+
               // [고급스러운 헤더 문구]
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 10, horizontal: 16),
@@ -102,7 +111,14 @@ class _MarketIndexTabState extends State<MarketIndexTab> with SingleTickerProvid
                     children: [
                       Icon(Icons.diamond, color: goldAccent),
                       SizedBox(width: 10),
-                      Text("권기태 금융전문가 인사이트", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                      Text(
+                        "권기태 금융전문가 인사이트",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -114,7 +130,10 @@ class _MarketIndexTabState extends State<MarketIndexTab> with SingleTickerProvid
                 unselectedLabelColor: Colors.white54,
                 indicatorColor: goldAccent,
                 indicatorWeight: 3,
-                tabs: const [Tab(text: "📜 일일 레포트"), Tab(text: "💡 기초 지식")],
+                tabs: const [
+                  Tab(text: "📜 일일 레포트"),
+                  Tab(text: "💡 기초 지식"),
+                ],
               ),
               Expanded(
                 child: TabBarView(
@@ -132,66 +151,111 @@ class _MarketIndexTabState extends State<MarketIndexTab> with SingleTickerProvid
     );
   }
 
-  Widget _buildContentList(String type) {
-    // [핵심] 기존 FutureBuilder에서 StreamBuilder로 변경
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: _postsStream,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) 
-          return const Center(child: CircularProgressIndicator(color: goldAccent));
-        if (!snapshot.hasData) 
-          return const Center(child: Text("데이터가 없습니다.", style: TextStyle(color: Colors.white54)));
+  Future<void> _reloadPosts() async {
+    setState(() {
+      _postsData = ApiService.fetchPosts();
+    });
+    await _postsData;
+  }
 
-        final data = snapshot.data!.where((item) {
+  Widget _buildContentList(String type) {
+    return FutureBuilder<List<dynamic>>(
+      future: _postsData,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: goldAccent),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: TextButton.icon(
+              onPressed: _reloadPosts,
+              icon: const Icon(Icons.refresh, color: goldAccent),
+              label: const Text(
+                '레포트를 불러오지 못했습니다. 다시 시도',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
+          );
+        }
+
+        final data = (snapshot.data ?? []).where((item) {
           final category = (item['category'] ?? '').toString().trim();
           return category == type;
         }).toList();
 
-        if (data.isEmpty) 
-          return Center(child: Text("$type 카테고리에 글이 없습니다.", style: const TextStyle(color: Colors.white54)));
+        if (data.isEmpty) {
+          return Center(
+            child: Text(
+              '$type 카테고리에 글이 없습니다.',
+              style: const TextStyle(color: Colors.white54),
+            ),
+          );
+        }
 
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: data.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 12),
-          itemBuilder: (context, index) {
-            final item = data[index];
-            return InkWell(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => DetailScreen(postId: item['id']),
-                  ),
-                );
-              },
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: cardColor, 
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: goldAccent.withOpacity(0.2)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.auto_awesome, color: goldAccent),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(item['title'] ?? '제목 없음', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
-                          const SizedBox(height: 4),
-                          Text(item['preview'] ?? '', style: const TextStyle(fontSize: 12, color: Colors.white60)),
-                        ],
-                      ),
+        return RefreshIndicator(
+          color: goldAccent,
+          backgroundColor: cardColor,
+          onRefresh: _reloadPosts,
+          child: ListView.separated(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16),
+            itemCount: data.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
+            itemBuilder: (context, index) {
+              final item = data[index];
+              return InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => DetailScreen(postId: item['id']),
                     ),
-                  ],
+                  );
+                },
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: goldAccent.withOpacity(0.2)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.auto_awesome, color: goldAccent),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item['title'] ?? '제목 없음',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              item['preview'] ?? '',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.white60,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         );
       },
     );
@@ -203,18 +267,39 @@ class _MarketIndexTabState extends State<MarketIndexTab> with SingleTickerProvid
       margin: const EdgeInsets.only(right: 15),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: cardColor, 
+        color: cardColor,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: goldAccent.withOpacity(0.3)),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(item.nation, style: const TextStyle(fontSize: 10, color: Colors.white54)),
-          Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+          Text(
+            item.nation,
+            style: const TextStyle(fontSize: 10, color: Colors.white54),
+          ),
+          Text(
+            item.name,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
           const SizedBox(height: 5),
-          Text(item.value, style: TextStyle(color: item.isUp ? Colors.redAccent : Colors.blueAccent, fontWeight: FontWeight.bold)),
-          Text(item.change, style: TextStyle(color: item.isUp ? Colors.redAccent : Colors.blueAccent, fontSize: 11)),
+          Text(
+            item.value,
+            style: TextStyle(
+              color: item.isUp ? Colors.redAccent : Colors.blueAccent,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Text(
+            item.change,
+            style: TextStyle(
+              color: item.isUp ? Colors.redAccent : Colors.blueAccent,
+              fontSize: 11,
+            ),
+          ),
         ],
       ),
     );
