@@ -7,20 +7,14 @@ on:
   workflow_dispatch:
 
 env:
-  HEALTH_URL: ${{ vars.RENDER_HEALTH_URL }}
+  # 별도 저장소 변수가 있으면 우선 사용하고, 없으면 기본 Render 서비스 주소를 사용합니다.
+  HEALTH_URL: ${{ vars.RENDER_HEALTH_URL || 'https://insight-now-app.onrender.com/health' }}
 
 jobs:
   health-check:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Validate health-check URL
-        run: |
-          if [ -z "$HEALTH_URL" ]; then
-            echo "Repository variable RENDER_HEALTH_URL is not configured."
-            exit 1
-          fi
-
       - name: Call Render health endpoint
         run: |
           set -euo pipefail

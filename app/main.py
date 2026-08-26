@@ -2,11 +2,13 @@ import os
 import time
 import math
 import asyncio
+import secrets
 from datetime import datetime, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 import yfinance as yf
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -16,7 +18,13 @@ from app.database import supabase
 from pathlib import Path
 
 # 서비스 함수 임포트
-from app.services.etf_service import update_etf_data_by_ticker, get_all_registered_tickers, add_to_registry
+from app.services.etf_service import (
+    add_to_registry,
+    get_all_registered_tickers,
+    refresh_etf_universe,
+    update_etf_data_by_ticker,
+)
+from app.services.gov_report_service import refresh_government_reports
 
 # 내부 모듈 임포트
 from app.routers import auth, news, posts, payments, admin, chat
@@ -67,16 +75,53 @@ class EtfRegistration(BaseModel):
 
 # --- 시장 데이터 캐시 ---
 market_data_cache = {"data": [], "last_updated": 0}
-news_scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
+automation_scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
+
+
+def require_admin_refresh_key(
+    x_admin_refresh_key: str | None = Header(default=None),
+) -> None:
+    """수동 데이터 갱신 API를 운영 비밀키로 보호합니다.
+
+    주기 스케줄러는 이 키와 무관하게 서버 내부에서 실행됩니다.
+    """
+    expected_key = os.getenv("ADMIN_REFRESH_KEY")
+    if not expected_key:
+        raise HTTPException(
+            status_code=503,
+            detail="ADMIN_REFRESH_KEY is not configured for manual refresh APIs.",
+        )
+    if not x_admin_refresh_key or not secrets.compare_digest(
+        x_admin_refresh_key, expected_key
+    ):
+        raise HTTPException(status_code=403, detail="Invalid admin refresh key.")
 
 
 async def refresh_news_in_background():
-    """RSS/LLM 작업을 웹 요청과 분리해 뉴스 저장소를 갱신합니다."""
+    """Yahoo Finance 뉴스와 Gemini 요약을 웹 요청과 분리해 갱신합니다."""
     try:
         saved_count = await asyncio.to_thread(fetch_and_save_news)
         print(f"📰 뉴스 수집 작업 완료: {saved_count}개 저장")
     except Exception as exc:
         print(f"⚠️ 뉴스 수집 작업 실패: {exc}")
+
+
+async def refresh_etfs_in_background():
+    """Yahoo Finance 상위 ETF와 기존 수동 등록 ETF의 시세를 자동 동기화합니다."""
+    try:
+        result = await asyncio.to_thread(refresh_etf_universe, 100)
+        print(f"📈 ETF 자동 갱신 완료: {result}")
+    except Exception as exc:
+        print(f"⚠️ ETF 자동 갱신 실패: {exc}")
+
+
+async def refresh_gov_reports_in_background():
+    """KDI 공식 월간 경제동향을 중복 없이 정부 보고서 탭에 저장합니다."""
+    try:
+        result = await asyncio.to_thread(refresh_government_reports)
+        print(f"🏛️ 정부 경제보고서 갱신 완료: {result}")
+    except Exception as exc:
+        print(f"⚠️ 정부 경제보고서 갱신 실패: {exc}")
 
 
 def fetch_market_data():
@@ -182,14 +227,10 @@ async def get_etf_detail(ticker: str):
 
 
 @app.post("/api/admin/update-etf")
-async def trigger_etf_update():
-    """모든 등록된 종목번호를 한 번에 업데이트합니다."""
-    tickers = get_all_registered_tickers()
-    results = []
-    for ticker in tickers:
-        res = update_etf_data_by_ticker(ticker)
-        results.append({"ticker": ticker, "result": res})
-    return {"message": "업데이트 완료", "details": results}
+async def trigger_etf_update(_: None = Depends(require_admin_refresh_key)):
+    """전체 ETF 유니버스를 즉시 동기화합니다."""
+    result = await asyncio.to_thread(refresh_etf_universe, 100)
+    return {"message": "ETF 자동 동기화 완료", "details": result}
 
 # 삭제 기능을 위한 엔드포인트 추가
 @app.delete("/api/etf/unregister/{ticker}")
@@ -216,19 +257,39 @@ async def startup_event():
     # 1. 초기 데이터 로드
     asyncio.create_task(background_init())
 
-    # 2. 뉴스는 별도 작업으로 즉시 한 번 수집하고, 이후 매시간 갱신합니다.
-    if not news_scheduler.running:
-        news_scheduler.add_job(
+    # 2. 뉴스·ETF·정부 경제보고서는 API 요청과 분리해 주기적으로 갱신합니다.
+    if not automation_scheduler.running:
+        automation_scheduler.add_job(
             refresh_news_in_background,
             trigger="interval",
-            hours=1,
+            hours=2,
             id="refresh_news",
             replace_existing=True,
             max_instances=1,
             coalesce=True,
         )
-        news_scheduler.start()
+        automation_scheduler.add_job(
+            refresh_etfs_in_background,
+            trigger="interval",
+            hours=6,
+            id="refresh_etfs",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+        automation_scheduler.add_job(
+            refresh_gov_reports_in_background,
+            trigger="interval",
+            hours=24,
+            id="refresh_government_reports",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+        automation_scheduler.start()
     asyncio.create_task(refresh_news_in_background())
+    asyncio.create_task(refresh_etfs_in_background())
+    asyncio.create_task(refresh_gov_reports_in_background())
     
     # 3. 경로 출력
     print("--- 📋 현재 등록된 API 경로 목록 ---")
@@ -239,8 +300,8 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    if news_scheduler.running:
-        news_scheduler.shutdown(wait=False)
+    if automation_scheduler.running:
+        automation_scheduler.shutdown(wait=False)
 
 
 async def background_init():
@@ -279,16 +340,33 @@ class GovStatsUpdate(BaseModel):
 @app.post("/api/admin/gov-stats")
 async def create_gov_stats(data: GovStatsUpdate):
     try:
-        # Supabase 테이블(gov_stats)에 데이터 저장
         response = supabase.table("gov_stats").insert({
             "title": data.title,
             "content": data.content
         }).execute()
-        
         return {"message": "보고서 저장 성공", "data": response.data}
     except Exception as e:
-        print(f"Error saving report: {e}") # 서버 로그에 에러 출력
+        print(f"Error saving report: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/gov-stats")
+async def get_gov_stats(limit: int = 20):
+    """정부 경제 정밀분석 보고서를 최신순으로 반환합니다."""
+    try:
+        response = supabase.table("gov_stats").select("*").order(
+            "created_at", desc=True
+        ).limit(min(max(limit, 1), 50)).execute()
+        return {"status": "success", "reports": response.data}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/admin/refresh-gov-stats")
+async def trigger_gov_stats_refresh(_: None = Depends(require_admin_refresh_key)):
+    """KDI 최신 월간 경제동향을 즉시 동기화합니다."""
+    result = await asyncio.to_thread(refresh_government_reports)
+    return {"message": "정부 경제보고서 자동 동기화 완료", "details": result}
 
 
 

@@ -1,117 +1,162 @@
-import feedparser
-import requests
-from groq import Groq
-from dotenv import load_dotenv
+import json
 import os
-from app.database import supabase_admin as supabase
 from datetime import datetime
+from typing import Any
+
+import requests
+from dotenv import load_dotenv
+
+from app.database import supabase_admin as supabase
+
+try:
+    from google import genai
+except ImportError:  # 배포 환경이 새 의존성을 설치하기 전에도 API 기동을 유지합니다.
+    genai = None
 
 load_dotenv()
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-
-RSS_FEEDS = [
-    {
-        "url": "https://news.google.com/rss/search?q=미국+증시+나스닥&hl=ko&gl=KR&ceid=KR:ko",
-        "category": "us_market"
-    },
-    {
-        "url": "https://news.google.com/rss/search?q=코스피+코스닥+한국증시&hl=ko&gl=KR&ceid=KR:ko",
-        "category": "kr_market"
-    },
-    {
-        "url": "https://news.google.com/rss/search?q=환율+달러+원화&hl=ko&gl=KR&ceid=KR:ko",
-        "category": "fx_rate"
-    },
-    {
-        "url": "https://news.google.com/rss/search?q=국채+금리+연준&hl=ko&gl=KR&ceid=KR:ko",
-        "category": "bond_rate"
-    },
+YAHOO_SEARCH_URL = "https://query1.finance.yahoo.com/v1/finance/search"
+YAHOO_QUERIES = [
+    {"query": "stock market", "category": "us_market"},
+    {"query": "Federal Reserve interest rates", "category": "bond_rate"},
+    {"query": "US dollar currency market", "category": "fx_rate"},
+    {"query": "Korea stock market", "category": "kr_market"},
 ]
+MAX_ITEMS_PER_QUERY = 5
+REQUEST_HEADERS = {
+    "User-Agent": "InsightNow/1.0 (+https://insight-now-app.onrender.com)",
+    "Accept": "application/json",
+}
 
-def summarize_news(title: str, description: str) -> dict:
-    prompt = f"""다음 뉴스를 분석해줘.
+
+def _get_gemini_client():
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if genai is None or not api_key:
+        return None
+    return genai.Client(api_key=api_key)
+
+
+def _fallback_summary(title: str, publisher: str, tickers: list[str]) -> dict[str, Any]:
+    ticker_text = f" 관련 종목: {', '.join(tickers[:4])}." if tickers else ""
+    return {
+        "headline": title,
+        "summary": f"{publisher}가 전한 금융 뉴스입니다. {title}{ticker_text}",
+        "importance": 3,
+    }
+
+
+def summarize_news(title: str, publisher: str, tickers: list[str]) -> dict[str, Any]:
+    """Yahoo Finance 기사 메타데이터를 근거로 Gemini가 한국어 브리핑을 생성합니다."""
+    fallback = _fallback_summary(title, publisher, tickers)
+    client = _get_gemini_client()
+    if client is None:
+        print("⚠️ GEMINI_API_KEY가 없어 원문 제목 기반 요약으로 저장합니다.")
+        return fallback
+
+    related_tickers = ", ".join(tickers[:6]) if tickers else "없음"
+    prompt = f"""
+당신은 금융 뉴스 편집자입니다. 아래 Yahoo Finance 뉴스 메타데이터만 근거로 한국어 금융 브리핑을 작성하세요.
+기사에 없는 사실, 숫자, 전망은 절대 만들지 마세요. 투자 매수·매도 권유도 금지합니다.
 
 제목: {title}
-내용: {description}
+매체: {publisher}
+관련 티커: {related_tickers}
 
-아래 형식으로 정확히 답해줘:
-요약: (핵심 내용을 3줄 이내로 요약)
-중요도: (1~5 숫자만)
-"""
+다음 JSON만 반환하세요.
+{{
+  "headline": "원문 의미를 유지한 45자 이내의 자연스러운 한국어 금융 헤드라인",
+  "summary": "한국어 2문장 이내의 읽기 쉬운 요약. 제목의 핵심과 시장에서 주목할 맥락을 사실 범위에서 설명",
+  "importance": 1에서 5 사이의 정수
+}}
+""".strip()
+
     try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=300,
+        response = client.models.generate_content(
+            model=os.getenv("GEMINI_NEWS_MODEL", "gemini-2.5-flash"),
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json",
+                "temperature": 0.2,
+                "max_output_tokens": 240,
+            },
         )
-        text = response.choices[0].message.content.strip()
+        raw_text = (response.text or "").strip().replace("```json", "").replace("```", "").strip()
+        data = json.loads(raw_text)
+        headline = str(data.get("headline", "")).strip()
+        summary = str(data.get("summary", "")).strip()
+        importance = int(data.get("importance", 3))
+        if not headline or not summary:
+            return fallback
+        return {
+            "headline": headline[:120],
+            "summary": summary[:600],
+            "importance": max(1, min(5, importance),),
+        }
+    except Exception as exc:
+        print(f"⚠️ Gemini 뉴스 요약 실패: {exc}")
+        return fallback
 
-        summary = ""
-        importance = 3
 
-        for line in text.split("\n"):
-            if line.startswith("요약:"):
-                summary = line.replace("요약:", "").strip()
-            elif line.startswith("중요도:"):
-                try:
-                    importance = int(line.replace("중요도:", "").strip()[0])
-                except:
-                    importance = 3
+def _fetch_yahoo_news(query: str) -> list[dict[str, Any]]:
+    response = requests.get(
+        YAHOO_SEARCH_URL,
+        params={"q": query, "newsCount": MAX_ITEMS_PER_QUERY, "region": "US", "lang": "en-US"},
+        headers=REQUEST_HEADERS,
+        timeout=20,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return payload.get("news", []) if isinstance(payload, dict) else []
 
-        if not summary:
-            summary = text[:200]
 
-        return {"summary": summary, "importance": importance}
-    except Exception as e:
-        print(f"AI 요약 실패: {e}")
-        return {"summary": title, "importance": 3}
+def _is_duplicate(source_url: str) -> bool:
+    if not source_url:
+        return True
+    result = supabase.table("ai_news").select("id").eq("source_url", source_url).limit(1).execute()
+    return bool(result.data)
 
-def fetch_and_save_news():
-    print(f"\n🔍 뉴스 수집 시작: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
+def fetch_and_save_news() -> int:
+    """Yahoo Finance 최신 금융 뉴스를 수집하고 Gemini 한국어 요약을 저장합니다."""
+    print(f"\n🔍 Yahoo Finance 뉴스 수집 시작: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     saved_count = 0
 
-    for feed_info in RSS_FEEDS:
+    for source in YAHOO_QUERIES:
         try:
-            response = requests.get(
-                feed_info["url"],
-                headers={"User-Agent": "InsightNow-NewsBot/1.0"},
-                timeout=20,
-            )
-            response.raise_for_status()
-            feed = feedparser.parse(response.content)
-            print(f"📡 {feed_info['category']}: {len(feed.entries)}개 RSS 항목 확인")
+            entries = _fetch_yahoo_news(source["query"])
+            print(f"📡 Yahoo Finance {source['category']}: {len(entries)}개 항목 확인")
         except Exception as exc:
-            print(f"⚠️ RSS 수집 실패 ({feed_info['category']}): {exc}")
+            print(f"⚠️ Yahoo Finance 수집 실패 ({source['category']}): {exc}")
             continue
 
-        for entry in feed.entries[:5]:
-            title = entry.get("title", "")
-            description = entry.get("summary", title)
-            source_url = entry.get("link", "")
-            source_name = entry.get("source", {}).get("title", "Google News")
+        for entry in entries:
+            title = str(entry.get("title", "")).strip()
+            source_url = str(entry.get("link", "")).strip()
+            publisher = str(entry.get("publisher", "Yahoo Finance")).strip() or "Yahoo Finance"
+            tickers = [str(ticker) for ticker in entry.get("relatedTickers", []) if ticker]
 
-            existing = supabase.table("ai_news").select("id").eq("source_url", source_url).execute()
-            if existing.data:
+            if not title or _is_duplicate(source_url):
                 continue
 
-            result = summarize_news(title, description)
+            summary_data = summarize_news(title, publisher, tickers)
+            try:
+                supabase.table("ai_news").insert({
+                    "title": summary_data["headline"],
+                    "summary": summary_data["summary"],
+                    "content": f"원문 제목: {title}",
+                    "source_url": source_url,
+                    "source_name": publisher,
+                    "category": source["category"],
+                    "importance": summary_data["importance"],
+                }).execute()
+                saved_count += 1
+                print(f"✅ 저장: {title[:60]}...")
+            except Exception as exc:
+                print(f"⚠️ 뉴스 저장 실패: {exc}")
 
-            supabase.table("ai_news").insert({
-                "title": title,
-                "summary": result["summary"],
-                "source_url": source_url,
-                "source_name": source_name,
-                "category": feed_info["category"],
-                "importance": result["importance"],
-            }).execute()
-
-            saved_count += 1
-            print(f"✅ 저장: {title[:40]}...")
-
-    print(f"📰 총 {saved_count}개 뉴스 저장 완료!")
+    print(f"📰 Yahoo Finance 뉴스 총 {saved_count}개 저장 완료")
     return saved_count
+
 
 if __name__ == "__main__":
     fetch_and_save_news()

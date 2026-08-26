@@ -68,6 +68,7 @@ flutter:
 
   assets:
     - assets/images/login_finance_taegeuk.png
+    - assets/images/market_hero.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:
