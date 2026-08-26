@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 import requests
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 from app.database import supabase_admin as supabase
@@ -23,6 +24,7 @@ except ImportError:
 load_dotenv()
 
 MYMEMORY_TRANSLATE_URL = "https://api.mymemory.translated.net/get"
+GOOGLE_WEB_TRANSLATE_URL = "https://translate.google.com/m"
 
 YAHOO_SEARCH_URLS = (
     "https://query1.finance.yahoo.com/v1/finance/search",
@@ -101,6 +103,35 @@ def _mymemory_korean_brief(
         return fallback
 
 
+def _google_web_korean_brief(
+    title: str, publisher: str, tickers: list[str], fallback: dict[str, Any]
+) -> dict[str, Any]:
+    """Google 모바일 번역 페이지를 사용하는 최종 보조 번역 경로입니다."""
+    try:
+        response = requests.get(
+            GOOGLE_WEB_TRANSLATE_URL,
+            params={"sl": "en", "tl": "ko", "q": title},
+            headers={
+                "User-Agent": "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36",
+                "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.7",
+            },
+            timeout=12,
+        )
+        soup = BeautifulSoup(response.text, "html.parser")
+        result_node = soup.select_one("div.result-container")
+        translated = result_node.get_text(" ", strip=True) if result_node else ""
+        if response.status_code != 200 or not translated or not re.search(r"[가-힣]", translated):
+            return fallback
+        ticker_text = f" 관련 종목: {', '.join(tickers[:4])}." if tickers else ""
+        return {
+            "headline": translated[:120],
+            "summary": f"{publisher}가 전한 금융 뉴스입니다. 원문 제목을 한국어로 옮겼습니다.{ticker_text}",
+            "importance": 3,
+        }
+    except (requests.RequestException, TypeError):
+        return fallback
+
+
 def _parse_korean_brief(raw_text: str, fallback: dict[str, Any]) -> dict[str, Any]:
     try:
         data = json.loads(raw_text.strip().replace("```json", "").replace("```", "").strip())
@@ -175,6 +206,10 @@ def summarize_news(title: str, publisher: str, tickers: list[str]) -> dict[str, 
             print(f"⚠️ Groq 뉴스 요약 실패: {type(exc).__name__}")
 
     translated_fallback = _mymemory_korean_brief(title, publisher, tickers, fallback)
+    if translated_fallback != fallback:
+        return translated_fallback
+
+    translated_fallback = _google_web_korean_brief(title, publisher, tickers, fallback)
     if translated_fallback != fallback:
         return translated_fallback
 
