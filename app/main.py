@@ -76,6 +76,11 @@ class EtfRegistration(BaseModel):
 # --- 시장 데이터 캐시 ---
 market_data_cache = {"data": [], "last_updated": 0}
 automation_scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
+automation_status: dict[str, dict[str, Any]] = {
+    "news": {"state": "not_started"},
+    "etfs": {"state": "not_started"},
+    "government_reports": {"state": "not_started"},
+}
 
 
 def require_admin_refresh_key(
@@ -97,30 +102,58 @@ def require_admin_refresh_key(
         raise HTTPException(status_code=403, detail="Invalid admin refresh key.")
 
 
+def _set_automation_status(job_name: str, state: str, **details: Any) -> None:
+    automation_status[job_name] = {
+        "state": state,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        **details,
+    }
+
+
 async def refresh_news_in_background():
     """Yahoo Finance 뉴스와 Gemini 요약을 웹 요청과 분리해 갱신합니다."""
+    _set_automation_status("news", "running")
     try:
         saved_count = await asyncio.to_thread(fetch_and_save_news)
+        _set_automation_status("news", "success", saved_count=saved_count)
         print(f"📰 뉴스 수집 작업 완료: {saved_count}개 저장")
     except Exception as exc:
+        _set_automation_status("news", "failed", error_type=type(exc).__name__)
         print(f"⚠️ 뉴스 수집 작업 실패: {exc}")
 
 
 async def refresh_etfs_in_background():
     """Yahoo Finance 상위 ETF와 기존 수동 등록 ETF의 시세를 자동 동기화합니다."""
+    _set_automation_status("etfs", "running")
     try:
         result = await asyncio.to_thread(refresh_etf_universe, 100)
+        _set_automation_status(
+            "etfs",
+            "success",
+            discovered=result.get("discovered", 0),
+            registered=result.get("registered", 0),
+            updated=result.get("updated", 0),
+            failure_count=len(result.get("failures", [])),
+        )
         print(f"📈 ETF 자동 갱신 완료: {result}")
     except Exception as exc:
+        _set_automation_status("etfs", "failed", error_type=type(exc).__name__)
         print(f"⚠️ ETF 자동 갱신 실패: {exc}")
 
 
 async def refresh_gov_reports_in_background():
     """KDI 공식 월간 경제동향을 중복 없이 정부 보고서 탭에 저장합니다."""
+    _set_automation_status("government_reports", "running")
     try:
         result = await asyncio.to_thread(refresh_government_reports)
+        _set_automation_status(
+            "government_reports", "success", result=result.get("status", "unknown")
+        )
         print(f"🏛️ 정부 경제보고서 갱신 완료: {result}")
     except Exception as exc:
+        _set_automation_status(
+            "government_reports", "failed", error_type=type(exc).__name__
+        )
         print(f"⚠️ 정부 경제보고서 갱신 실패: {exc}")
 
 
@@ -158,8 +191,15 @@ def fetch_market_data():
     except: pass
     return results
 
+@app.get("/api/automation/status")
+async def get_automation_status():
+    """자동 수집 작업의 최근 상태를 비밀정보 없이 반환합니다."""
+    return automation_status
+
+
 @app.get("/api/market/indices")
 async def get_market_indices():
+
     if time.time() - market_data_cache["last_updated"] > 60 or not market_data_cache["data"]:
         market_data_cache["data"] = fetch_market_data()
         market_data_cache["last_updated"] = time.time()
