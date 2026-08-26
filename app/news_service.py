@@ -15,7 +15,10 @@ except ImportError:  # 배포 환경이 새 의존성을 설치하기 전에도 
 
 load_dotenv()
 
-YAHOO_SEARCH_URL = "https://query1.finance.yahoo.com/v1/finance/search"
+YAHOO_SEARCH_URLS = (
+    "https://query1.finance.yahoo.com/v1/finance/search",
+    "https://query2.finance.yahoo.com/v1/finance/search",
+)
 YAHOO_QUERIES = [
     {"query": "stock market", "category": "us_market"},
     {"query": "Federal Reserve interest rates", "category": "bond_rate"},
@@ -24,8 +27,13 @@ YAHOO_QUERIES = [
 ]
 MAX_ITEMS_PER_QUERY = 5
 REQUEST_HEADERS = {
-    "User-Agent": "InsightNow/1.0 (+https://insight-now-app.onrender.com)",
-    "Accept": "application/json",
+    # Yahoo의 공개 검색 API는 서버성 커스텀 UA를 간헐적으로 차단하므로 표준 브라우저 형식을 사용합니다.
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
 
@@ -98,15 +106,34 @@ def summarize_news(title: str, publisher: str, tickers: list[str]) -> dict[str, 
 
 
 def _fetch_yahoo_news(query: str) -> list[dict[str, Any]]:
-    response = requests.get(
-        YAHOO_SEARCH_URL,
-        params={"q": query, "newsCount": MAX_ITEMS_PER_QUERY, "region": "US", "lang": "en-US"},
-        headers=REQUEST_HEADERS,
-        timeout=20,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    return payload.get("news", []) if isinstance(payload, dict) else []
+    request_params = {
+        "q": query,
+        "newsCount": MAX_ITEMS_PER_QUERY,
+        "region": "US",
+        "lang": "en-US",
+    }
+    last_error: requests.RequestException | None = None
+
+    for endpoint in YAHOO_SEARCH_URLS:
+        try:
+            response = requests.get(
+                endpoint,
+                params=request_params,
+                headers=REQUEST_HEADERS,
+                timeout=20,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            news_items = payload.get("news", []) if isinstance(payload, dict) else []
+            if news_items:
+                return news_items
+        except requests.RequestException as exc:
+            last_error = exc
+            continue
+
+    if last_error:
+        raise last_error
+    return []
 
 
 def _is_duplicate(source_url: str) -> bool:
