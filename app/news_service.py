@@ -1,3 +1,4 @@
+import html
 import json
 import os
 import re
@@ -20,6 +21,8 @@ except ImportError:
     Groq = None
 
 load_dotenv()
+
+MYMEMORY_TRANSLATE_URL = "https://api.mymemory.translated.net/get"
 
 YAHOO_SEARCH_URLS = (
     "https://query1.finance.yahoo.com/v1/finance/search",
@@ -64,6 +67,38 @@ def _fallback_summary(title: str, publisher: str, tickers: list[str]) -> dict[st
         "summary": f"{publisher}가 전한 금융 뉴스입니다. {title}{ticker_text}",
         "importance": 3,
     }
+
+
+def _mymemory_korean_brief(
+    title: str, publisher: str, tickers: list[str], fallback: dict[str, Any]
+) -> dict[str, Any]:
+    """별도 키가 없는 환경을 위한 제목 번역 보조 경로입니다.
+
+    원문에 없는 정보를 덧붙이지 않고, 제목을 한국어로 옮긴 뒤 출처·관련 티커만 안내합니다.
+    """
+    if re.search(r"[가-힣]", title):
+        return fallback
+    try:
+        response = requests.get(
+            MYMEMORY_TRANSLATE_URL,
+            params={"q": title, "langpair": "en|ko"},
+            headers={"User-Agent": "InsightNow/1.0"},
+            timeout=12,
+        )
+        payload = response.json()
+        translated = html.unescape(
+            str((payload.get("responseData") or {}).get("translatedText") or "")
+        ).strip()
+        if response.status_code != 200 or not translated or not re.search(r"[가-힣]", translated):
+            return fallback
+        ticker_text = f" 관련 종목: {', '.join(tickers[:4])}." if tickers else ""
+        return {
+            "headline": translated[:120],
+            "summary": f"{publisher}가 전한 금융 뉴스입니다. 원문 제목을 한국어로 옮겼습니다.{ticker_text}",
+            "importance": 3,
+        }
+    except (requests.RequestException, ValueError, TypeError):
+        return fallback
 
 
 def _parse_korean_brief(raw_text: str, fallback: dict[str, Any]) -> dict[str, Any]:
@@ -139,7 +174,11 @@ def summarize_news(title: str, publisher: str, tickers: list[str]) -> dict[str, 
         except Exception as exc:
             print(f"⚠️ Groq 뉴스 요약 실패: {type(exc).__name__}")
 
-    print("⚠️ Gemini와 Groq 키가 없어 원문 제목 기반 요약으로 저장합니다.")
+    translated_fallback = _mymemory_korean_brief(title, publisher, tickers, fallback)
+    if translated_fallback != fallback:
+        return translated_fallback
+
+    print("⚠️ 한국어 요약 서비스를 사용할 수 없어 원문 제목 기반으로 저장합니다.")
     return fallback
 
 
@@ -187,7 +226,7 @@ def _needs_korean_refresh(title: str) -> bool:
     return bool(clean_title) and not bool(re.search(r"[가-힣]", clean_title))
 
 
-def _refresh_existing_korean_news(limit: int = 50) -> int:
+def _refresh_existing_korean_news(limit: int = 20) -> int:
     """기존 영문 제목의 최근 뉴스도 한국어 편집본으로 안전하게 갱신합니다."""
     try:
         response = (

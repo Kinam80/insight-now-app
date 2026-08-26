@@ -287,13 +287,14 @@ class _MarketIndexTabState extends State<MarketIndexTab>
           return _buildRetryState('레포트를 불러오지 못했습니다. 다시 시도해 주세요.');
         }
 
-        final reports =
-            (snapshot.data ?? [])
-                .where(
-                  (item) => (item['category'] ?? '').toString().trim() == '레포트',
-                )
-                .toList()
-              ..sort((a, b) => _postDate(b).compareTo(_postDate(a)));
+        // /api/posts/는 공개 발행 레포트만 반환합니다. 카테고리 텍스트의
+        // 인코딩 차이로 기존 레포트가 숨겨지지 않도록 목록 전체를 표시합니다.
+        final reports = List<dynamic>.from(snapshot.data ?? []);
+        // 서버가 created_at 우선 최신순으로 정렬하며, 구버전 서버 응답에도 안전하도록
+        // 날짜 필드가 있을 때만 클라이언트에서 한 번 더 정렬합니다.
+        if (reports.any((item) => _hasPostDate(item))) {
+          reports.sort((a, b) => _postDate(b).compareTo(_postDate(a)));
+        }
 
         if (reports.isEmpty) {
           return _buildRetryState('발행된 일일 레포트가 없습니다.');
@@ -675,6 +676,12 @@ class _MarketIndexTabState extends State<MarketIndexTab>
         ),
       ),
     );
+  }
+
+  bool _hasPostDate(dynamic item) {
+    final raw =
+        item['created_at'] ?? item['published_at'] ?? item['updated_at'];
+    return DateTime.tryParse(raw?.toString() ?? '') != null;
   }
 
   DateTime _postDate(dynamic item) {

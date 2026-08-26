@@ -37,13 +37,23 @@ def get_current_user(authorization: str = Header(default=None)):
 def get_posts(authorization: Optional[str] = Header(default=None)):
     user = get_current_user(authorization)
 
-    result = supabase.table("analysis_posts")\
-        .select("id, title, preview, category, access_type, single_price, tags, thumbnail_url, view_count, published_at")\
-        .eq("is_published", True)\
-        .order("published_at", desc=True)\
-        .execute()
+    # 신규/레거시 데이터 모두 최신순으로 보이도록 생성일 우선 정렬합니다.
+    # 오래된 테이블에 created_at이 없는 경우에는 기존 published_at 정렬로 안전하게 폴백합니다.
+    base_fields = "id, title, preview, category, access_type, single_price, tags, thumbnail_url, view_count, published_at"
+    try:
+        result = supabase.table("analysis_posts")\
+            .select(f"{base_fields}, created_at")\
+            .eq("is_published", True)\
+            .order("created_at", desc=True)\
+            .execute()
+    except Exception:
+        result = supabase.table("analysis_posts")\
+            .select(base_fields)\
+            .eq("is_published", True)\
+            .order("published_at", desc=True)\
+            .execute()
 
-    posts = result.data
+    posts = result.data or []
 
     for post in posts:
         post["is_purchased"] = False
