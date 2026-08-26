@@ -14,7 +14,8 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      # 설정되면 Gemini가 한국어 헤드라인·요약을 생성하며, 없으면 안전한 원문 기반 요약으로 계속 수집합니다.
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,7 +32,9 @@ jobs:
         run: |
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_SECRET_KEY"
-          test -n "$GROQ_API_KEY"
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY is not configured; the safe source-title fallback will be used."
+          fi
 
       - name: Fetch and save news
         run: python -m app.news_service
