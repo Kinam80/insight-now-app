@@ -151,25 +151,37 @@ async def refresh_etfs_in_background():
 
 
 async def refresh_gov_reports_in_background():
-    """KDI 공식 월간 경제동향을 중복 없이 정부 보고서 탭에 저장합니다."""
+    """KDI 새 보고서 수집과 기존 영문 브리핑 한국어화를 독립적으로 실행합니다."""
     _set_automation_status("government_reports", "running")
+    latest_status = "unavailable"
+    latest_error = None
     try:
         result = await asyncio.to_thread(refresh_government_reports)
+        latest_status = result.get("status", "unknown")
+    except Exception as exc:
+        # 원문 사이트의 일시 지연은 기존 카드 번역 작업을 막지 않습니다.
+        latest_error = type(exc).__name__
+        print(f"⚠️ KDI 신규 보고서 수집 지연: {latest_error}")
+
+    try:
         translated_existing = await asyncio.to_thread(
             refresh_existing_korean_gov_reports, 10
         )
         _set_automation_status(
             "government_reports",
             "success",
-            result=result.get("status", "unknown"),
+            result=latest_status,
             translated_existing=translated_existing,
+            latest_fetch_error=latest_error,
         )
-        print(f"🏛️ 정부 경제보고서 갱신 완료: {result}, 기존 한국어화 {translated_existing}건")
+        print(
+            f"🏛️ 정부 경제보고서 갱신 완료: 최신={latest_status}, 기존 한국어화 {translated_existing}건"
+        )
     except Exception as exc:
         _set_automation_status(
             "government_reports", "failed", error_type=type(exc).__name__
         )
-        print(f"⚠️ 정부 경제보고서 갱신 실패: {exc}")
+        print(f"⚠️ 기존 정부 보고서 한국어화 실패: {type(exc).__name__}")
 
 
 def fetch_market_data():
