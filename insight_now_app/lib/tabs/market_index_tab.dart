@@ -309,144 +309,134 @@ class _MarketIndexTabState extends State<MarketIndexTab>
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
             itemCount: reports.length,
             separatorBuilder: (context, index) => const SizedBox(height: 2),
-            itemBuilder: (context, index) => _buildTimelineReport(
-              reports[index],
-              isLast: index == reports.length - 1,
-            ),
+            itemBuilder: (context, index) =>
+                _buildTimelineReport(reports[index]),
           ),
         );
       },
     );
   }
 
-  Widget _buildTimelineReport(dynamic item, {required bool isLast}) {
+  Widget _buildTimelineReport(dynamic item) {
     final date = _postDate(item);
     final postId = item['id']?.toString();
     final preview = (item['preview'] ?? item['summary'] ?? '').toString();
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: postId == null || postId.isEmpty
-          ? null
-          : () => _openReportDetail(postId),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              width: 58,
-              child: Column(
-                children: [
-                  Container(
-                    width: 40,
-                    padding: const EdgeInsets.symmetric(vertical: 7),
-                    decoration: BoxDecoration(
-                      color: goldAccent.withValues(alpha: 0.13),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: goldAccent.withValues(alpha: 0.28),
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          '${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}',
-                          style: const TextStyle(
-                            color: Color(0xFFFFE08A),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        Text(
-                          '${date.year}',
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 9,
-                          ),
-                        ),
-                      ],
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: postId == null || postId.isEmpty
+              ? null
+              : () => _openReportDetail(postId),
+          child: Ink(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: cardColor.withValues(alpha: 0.96),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: goldAccent.withValues(alpha: 0.22)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 52,
+                  padding: const EdgeInsets.symmetric(vertical: 9),
+                  decoration: BoxDecoration(
+                    color: goldAccent.withValues(alpha: 0.13),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: goldAccent.withValues(alpha: 0.30),
                     ),
                   ),
-                  if (!isLast)
-                    Expanded(
-                      child: Container(
-                        width: 2,
-                        margin: const EdgeInsets.symmetric(vertical: 6),
-                        color: goldAccent.withValues(alpha: 0.34),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(17),
-                decoration: BoxDecoration(
-                  color: cardColor.withValues(alpha: 0.95),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: goldAccent.withValues(alpha: 0.20)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.auto_awesome_rounded,
-                          color: goldAccent,
-                          size: 17,
-                        ),
-                        const SizedBox(width: 7),
-                        const Text(
-                          'DAILY MARKET NOTE',
-                          style: TextStyle(
-                            color: Color(0xFFFFE08A),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.6,
-                          ),
-                        ),
-                        const Spacer(),
-                        const Icon(
-                          Icons.arrow_forward_ios_rounded,
-                          color: Colors.white38,
-                          size: 14,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 9),
-                    Text(
-                      (item['title'] ?? '제목 없음').toString(),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                        height: 1.35,
-                        color: Colors.white,
-                      ),
-                    ),
-                    if (preview.isNotEmpty) ...[
-                      const SizedBox(height: 7),
+                  child: Column(
+                    children: [
                       Text(
-                        preview,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                        '${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}',
                         style: const TextStyle(
+                          color: Color(0xFFFFE08A),
                           fontSize: 12,
-                          height: 1.45,
-                          color: Colors.white60,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${date.year}',
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 10,
                         ),
                       ),
                     ],
-                  ],
+                  ),
                 ),
-              ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.auto_awesome_rounded,
+                            color: goldAccent,
+                            size: 16,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            'DAILY MARKET NOTE',
+                            style: TextStyle(
+                              color: Color(0xFFFFE08A),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        (item['title'] ?? '제목 없음').toString(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                          height: 1.34,
+                          color: Colors.white,
+                        ),
+                      ),
+                      if (preview.isNotEmpty) ...[
+                        const SizedBox(height: 7),
+                        Text(
+                          preview,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            height: 1.42,
+                            color: Colors.white60,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Padding(
+                  padding: EdgeInsets.only(top: 20),
+                  child: Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    color: Colors.white38,
+                    size: 14,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

@@ -24,7 +24,10 @@ from app.services.etf_service import (
     refresh_etf_universe,
     update_etf_data_by_ticker,
 )
-from app.services.gov_report_service import refresh_government_reports
+from app.services.gov_report_service import (
+    refresh_existing_korean_gov_reports,
+    refresh_government_reports,
+)
 
 # 내부 모듈 임포트
 from app.routers import auth, news, posts, payments, admin, chat
@@ -152,10 +155,16 @@ async def refresh_gov_reports_in_background():
     _set_automation_status("government_reports", "running")
     try:
         result = await asyncio.to_thread(refresh_government_reports)
-        _set_automation_status(
-            "government_reports", "success", result=result.get("status", "unknown")
+        translated_existing = await asyncio.to_thread(
+            refresh_existing_korean_gov_reports, 10
         )
-        print(f"🏛️ 정부 경제보고서 갱신 완료: {result}")
+        _set_automation_status(
+            "government_reports",
+            "success",
+            result=result.get("status", "unknown"),
+            translated_existing=translated_existing,
+        )
+        print(f"🏛️ 정부 경제보고서 갱신 완료: {result}, 기존 한국어화 {translated_existing}건")
     except Exception as exc:
         _set_automation_status(
             "government_reports", "failed", error_type=type(exc).__name__
@@ -417,7 +426,12 @@ async def get_gov_stats(limit: int = 20):
 async def trigger_gov_stats_refresh(_: None = Depends(require_admin_refresh_key)):
     """KDI 최신 월간 경제동향을 즉시 동기화합니다."""
     result = await asyncio.to_thread(refresh_government_reports)
-    return {"message": "정부 경제보고서 자동 동기화 완료", "details": result}
+    translated_existing = await asyncio.to_thread(refresh_existing_korean_gov_reports, 10)
+    return {
+        "message": "정부 경제보고서 자동 동기화 완료",
+        "details": result,
+        "translated_existing": translated_existing,
+    }
 
 
 
