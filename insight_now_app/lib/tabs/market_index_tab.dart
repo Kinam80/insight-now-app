@@ -91,7 +91,7 @@ class _MarketIndexTabState extends State<MarketIndexTab>
   void initState() {
     super.initState();
     _marketData = ApiService.fetchMarketIndices();
-    _postsData = ApiService.fetchPosts();
+    _postsData = ApiService.fetchDailyReports();
     _tabController = TabController(length: 2, vsync: this);
     _adService = AdService();
     _adService.loadInterstitialAd(AdConfig.interstitialAdUnitId);
@@ -118,7 +118,7 @@ class _MarketIndexTabState extends State<MarketIndexTab>
 
   Future<void> _reloadPosts() async {
     setState(() {
-      _postsData = ApiService.fetchPosts();
+      _postsData = ApiService.fetchDailyReports();
     });
     await _postsData;
   }

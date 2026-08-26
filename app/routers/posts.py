@@ -70,9 +70,36 @@ def get_posts(authorization: Optional[str] = Header(default=None)):
                     .execute()
                 post["is_purchased"] = bool(purchase.data)
 
-    return {"posts": posts}
+        return {"posts": posts}
+
+
+@router.get("/feed/latest")
+def get_latest_report_feed():
+    """모바일 홈 전용의 가벼운 공개 일일 레포트 피드입니다."""
+    fields = "id, title, preview, category, published_at"
+    try:
+        result = (
+            supabase.table("analysis_posts")
+            .select(f"{fields}, created_at")
+            .eq("is_published", True)
+            .order("created_at", desc=True)
+            .limit(60)
+            .execute()
+        )
+    except Exception:
+        result = (
+            supabase.table("analysis_posts")
+            .select(fields)
+            .eq("is_published", True)
+            .order("published_at", desc=True)
+            .limit(60)
+            .execute()
+        )
+    return {"reports": result.data or []}
+
 
 @router.get("/{post_id}")
+
 def get_post_detail(post_id: str, authorization: Optional[str] = Header(default=None)):
     user = get_current_user(authorization)
 
