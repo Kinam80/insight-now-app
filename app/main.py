@@ -114,8 +114,14 @@ async def refresh_news_in_background():
     """Yahoo Finance 뉴스와 Gemini 요약을 웹 요청과 분리해 갱신합니다."""
     _set_automation_status("news", "running")
     try:
-        saved_count = await asyncio.to_thread(fetch_and_save_news)
-        _set_automation_status("news", "success", saved_count=saved_count)
+        result = await asyncio.to_thread(fetch_and_save_news)
+        if isinstance(result, dict):
+            _set_automation_status("news", "success", **result)
+            saved_count = result.get("saved_count", 0)
+        else:
+            # 과거 서비스 구현과의 호환성을 유지합니다.
+            saved_count = int(result)
+            _set_automation_status("news", "success", saved_count=saved_count)
         print(f"📰 뉴스 수집 작업 완료: {saved_count}개 저장")
     except Exception as exc:
         _set_automation_status("news", "failed", error_type=type(exc).__name__)

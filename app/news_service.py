@@ -143,45 +143,109 @@ def _is_duplicate(source_url: str) -> bool:
     return bool(result.data)
 
 
-def fetch_and_save_news() -> int:
-    """Yahoo Finance 최신 금융 뉴스를 수집하고 Gemini 한국어 요약을 저장합니다."""
+def fetch_and_save_news() -> dict[str, int]:
+    """Yahoo Finance 최신 금융 뉴스를 수집하고 Gemini 한국어 요약을 저장합니다.
+
+    중복 확인과 저장을 배치화하여 서버 시작 직후의 일시적인 DB 연결 오류가
+    개별 기사마다 증폭되지 않도록 합니다.
+    """
     print(f"\n🔍 Yahoo Finance 뉴스 수집 시작: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    saved_count = 0
+    raw_candidates: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    fetch_failure_count = 0
 
     for source in YAHOO_QUERIES:
         try:
             entries = _fetch_yahoo_news(source["query"])
             print(f"📡 Yahoo Finance {source['category']}: {len(entries)}개 항목 확인")
         except Exception as exc:
+            fetch_failure_count += 1
             print(f"⚠️ Yahoo Finance 수집 실패 ({source['category']}): {exc}")
             continue
 
         for entry in entries:
             title = str(entry.get("title", "")).strip()
             source_url = str(entry.get("link", "")).strip()
-            publisher = str(entry.get("publisher", "Yahoo Finance")).strip() or "Yahoo Finance"
-            tickers = [str(ticker) for ticker in entry.get("relatedTickers", []) if ticker]
-
-            if not title or _is_duplicate(source_url):
+            if not title or not source_url or source_url in seen_urls:
                 continue
+            seen_urls.add(source_url)
+            raw_candidates.append({"entry": entry, "category": source["category"]})
 
-            summary_data = summarize_news(title, publisher, tickers)
+    if not raw_candidates:
+        return {
+            "saved_count": 0,
+            "candidate_count": 0,
+            "fetch_failure_count": fetch_failure_count,
+            "save_failure_count": 0,
+        }
+
+    candidate_urls = [item["entry"]["link"] for item in raw_candidates]
+    try:
+        existing_result = (
+            supabase.table("ai_news")
+            .select("source_url")
+            .in_("source_url", candidate_urls)
+            .execute()
+        )
+        existing_urls = {
+            str(item.get("source_url"))
+            for item in (existing_result.data or [])
+            if item.get("source_url")
+        }
+    except Exception as exc:
+        # 배포 직후 연결이 재설정되는 경우에도 신규 기사를 놓치지 않도록 저장을 시도합니다.
+        existing_urls = set()
+        print(f"⚠️ 뉴스 중복 조회 실패, 신규 저장을 계속 시도합니다: {type(exc).__name__}")
+
+    records: list[dict[str, Any]] = []
+    for candidate in raw_candidates:
+        entry = candidate["entry"]
+        source_url = str(entry["link"])
+        if source_url in existing_urls:
+            continue
+        title = str(entry["title"]).strip()
+        publisher = str(entry.get("publisher", "Yahoo Finance")).strip() or "Yahoo Finance"
+        tickers = [str(ticker) for ticker in entry.get("relatedTickers", []) if ticker]
+        summary_data = summarize_news(title, publisher, tickers)
+        records.append({
+            "title": summary_data["headline"],
+            "summary": summary_data["summary"],
+            "source_url": source_url,
+            "source_name": publisher,
+            "category": candidate["category"],
+            "importance": summary_data["importance"],
+        })
+
+    if not records:
+        return {
+            "saved_count": 0,
+            "candidate_count": len(raw_candidates),
+            "fetch_failure_count": fetch_failure_count,
+            "save_failure_count": 0,
+        }
+
+    saved_count = 0
+    save_failure_count = 0
+    try:
+        supabase.table("ai_news").insert(records).execute()
+        saved_count = len(records)
+    except Exception as exc:
+        print(f"⚠️ 뉴스 일괄 저장 실패, 개별 저장으로 재시도합니다: {type(exc).__name__}")
+        for record in records:
             try:
-                supabase.table("ai_news").insert({
-                    "title": summary_data["headline"],
-                    "summary": summary_data["summary"],
-                    "source_url": source_url,
-                    "source_name": publisher,
-                    "category": source["category"],
-                    "importance": summary_data["importance"],
-                }).execute()
+                supabase.table("ai_news").insert(record).execute()
                 saved_count += 1
-                print(f"✅ 저장: {title[:60]}...")
-            except Exception as exc:
-                print(f"⚠️ 뉴스 저장 실패: {exc}")
+            except Exception as item_exc:
+                save_failure_count += 1
+                print(f"⚠️ 뉴스 저장 실패: {type(item_exc).__name__}")
 
     print(f"📰 Yahoo Finance 뉴스 총 {saved_count}개 저장 완료")
-    return saved_count
+    return {
+        "saved_count": saved_count,
+        "candidate_count": len(raw_candidates),
+        "fetch_failure_count": fetch_failure_count,
+        "save_failure_count": save_failure_count,
+    }
 
 
 if __name__ == "__main__":
