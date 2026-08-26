@@ -233,19 +233,24 @@ async def get_etf_list():
         data_res = supabase.table("etf_data").select("*").execute()
         
         # 3. 파이썬 로직으로 두 리스트를 합칩니다.
-        combined_list = []
+                # 레거시 데이터에 남아 있을 수 있는 중복 티커를 API 수준에서 정리합니다.
+        latest_data_by_ticker = {}
+        for item in data_res.data:
+            ticker = item.get("ticker")
+            if ticker:
+                latest_data_by_ticker[str(ticker).upper()] = item
+
+        combined_by_ticker = {}
         for reg in registry_res.data:
-            # 티커(ticker)가 같은 데이터를 찾아서 합칩니다.
-            ticker = reg['ticker']
-            # etf_data 리스트에서 현재 티커와 일치하는 것을 찾습니다.
-            match = next((item for item in data_res.data if item['ticker'] == ticker), {})
-            
-            # 레지스트리(reg) + 데이터(match)를 합쳐서 새로운 객체 생성
-            # 이렇게 하면 앱은 etf['name'], etf['price'] 등을 바로 쓸 수 있습니다.
-            combined_item = {**reg, **match}
-            combined_list.append(combined_item)
-            
-        return combined_list
+            ticker = str(reg.get("ticker", "")).upper()
+            if not ticker:
+                continue
+            match = latest_data_by_ticker.get(ticker, {})
+            # 레지스트리(reg) + 데이터(match)를 합치면 앱은 name·price를 바로 사용합니다.
+            combined_by_ticker[ticker] = {**reg, **match, "ticker": ticker}
+
+        return list(combined_by_ticker.values())
+
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

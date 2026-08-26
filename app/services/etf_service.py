@@ -38,6 +38,17 @@ def _quote_price(quote: dict[str, Any]) -> float | None:
     return None
 
 
+def _save_by_ticker(table_name: str, payload: dict[str, Any]) -> Any:
+    """유니크 제약이 없는 레거시 테이블에서도 중복 없이 티커 행을 저장합니다."""
+    ticker = str(payload["ticker"]).upper()
+    existing = (
+        supabase.table(table_name).select("id").eq("ticker", ticker).limit(1).execute()
+    )
+    if existing.data:
+        return supabase.table(table_name).update(payload).eq("ticker", ticker).execute()
+    return supabase.table(table_name).insert(payload).execute()
+
+
 def update_etf_data_by_ticker(ticker_symbol: str) -> dict[str, Any]:
     """개별 ETF의 이름·현재가를 조회하여 etf_data에 upsert합니다."""
     try:
@@ -46,7 +57,7 @@ def update_etf_data_by_ticker(ticker_symbol: str) -> dict[str, Any]:
         price = info.get("regularMarketPrice") or info.get("currentPrice")
         name = info.get("shortName") or info.get("longName") or ticker_symbol
         payload = {"ticker": ticker_symbol.upper(), "name": name, "price": price}
-        response = supabase.table("etf_data").upsert(payload).execute()
+        response = _save_by_ticker("etf_data", payload)
         return {"status": "success", "ticker": ticker_symbol.upper(), "data": response.data}
     except Exception as exc:
         print(f"⚠️ ETF 개별 업데이트 실패 ({ticker_symbol}): {exc}")
@@ -104,13 +115,13 @@ def refresh_etf_universe(limit: int = 100) -> dict[str, Any]:
         name = str(quote.get("shortName") or quote.get("longName") or ticker)
         price = _quote_price(quote)
         try:
-            supabase.table("etf_registry").upsert(
-                {"ticker": ticker, "weight": 0, "is_active": True}
-            ).execute()
+            _save_by_ticker(
+                "etf_registry", {"ticker": ticker, "weight": 0, "is_active": True}
+            )
             registered += 1
-            supabase.table("etf_data").upsert(
-                {"ticker": ticker, "name": name, "price": price}
-            ).execute()
+            _save_by_ticker(
+                "etf_data", {"ticker": ticker, "name": name, "price": price}
+            )
             updated += 1
         except Exception as exc:
             failures.append(f"{ticker}: {exc}")
@@ -137,7 +148,13 @@ def get_all_registered_tickers() -> list[str]:
     """etf_registry에서 활성 ETF 티커 목록을 반환합니다."""
     try:
         response = supabase.table("etf_registry").select("ticker").eq("is_active", True).execute()
-        return [str(item["ticker"]).upper() for item in response.data if item.get("ticker")]
+        return list(
+            dict.fromkeys(
+                str(item["ticker"]).upper()
+                for item in response.data
+                if item.get("ticker")
+            )
+        )
     except Exception as exc:
         print(f"⚠️ ETF 레지스트리 조회 실패: {exc}")
         return []
@@ -147,9 +164,9 @@ def add_to_registry(ticker: str, weight: float) -> dict[str, Any]:
     """관리자 수동 등록 종목도 자동 갱신 대상에 포함합니다."""
     try:
         normalized = ticker.strip().upper()
-        response = supabase.table("etf_registry").upsert(
-            {"ticker": normalized, "weight": weight, "is_active": True}
-        ).execute()
+        response = _save_by_ticker(
+            "etf_registry", {"ticker": normalized, "weight": weight, "is_active": True}
+        )
         return {"status": "success", "data": response.data}
     except Exception as exc:
         print(f"⚠️ ETF 레지스트리 등록 실패: {exc}")
