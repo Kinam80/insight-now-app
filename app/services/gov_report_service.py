@@ -24,6 +24,14 @@ def _has_korean(text: str) -> bool:
     return bool(re.search(r"[가-힣]", text or ""))
 
 
+def _needs_korean_brief(content: str) -> bool:
+    """한국어 헤더만 있고 본문은 영어인 기존 카드도 갱신 대상으로 판별합니다."""
+    text = re.sub(r"https?://\S+", "", content or "")
+    english_count = len(re.findall(r"[A-Za-z]", text))
+    korean_count = len(re.findall(r"[가-힣]", text))
+    return english_count > max(120, korean_count * 2)
+
+
 def _translate_with_mymemory(text: str) -> str:
     """키가 없는 환경을 위한 짧은 문장 번역 보조 경로입니다."""
     try:
@@ -215,7 +223,7 @@ def refresh_government_reports() -> dict[str, Any]:
         None,
     )
     if same_report:
-        needs_update = not _has_korean(str(same_report.get("content", "")))
+        needs_update = _needs_korean_brief(str(same_report.get("content", "")))
         needs_title = same_report.get("title") != display_title
         if needs_update or needs_title:
             supabase.table("gov_stats").update(
@@ -244,7 +252,7 @@ def refresh_existing_korean_gov_reports(limit: int = 10) -> int:
         for item in result.data or []:
             content = str(item.get("content", ""))
             title = str(item.get("title", ""))
-            if "KDI" not in title or _has_korean(content):
+            if "KDI" not in title or not _needs_korean_brief(content):
                 continue
             english_body = re.sub(r"^#.*?\n", "", content, flags=re.DOTALL).strip()[:2800]
             report = {
