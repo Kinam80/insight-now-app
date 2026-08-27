@@ -395,6 +395,7 @@ def update_etf_data_by_ticker(ticker_symbol: str, quote: dict[str, Any] | None =
             "price": price,
             "description": description,
             "holdings_json": metadata,
+            "updated_at": metadata["synced_at"],
         }
         response = _save_by_ticker("etf_data", payload)
         return {
