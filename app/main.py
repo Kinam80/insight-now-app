@@ -294,7 +294,7 @@ async def get_etf_list():
                 latest_data_by_ticker[normalized] = item
 
         combined_by_ticker = {}
-        for reg in registry_res.data:
+        for reg in registry_res.data or []:
             ticker = str(reg.get("ticker", "")).upper()
             if not ticker:
                 continue
@@ -320,11 +320,11 @@ async def get_etf_detail(ticker: str):
             .select("*")
             .eq("ticker", normalized)
             .eq("is_active", True)
-            .order("updated_at", desc=True)
+            .order("created_at", desc=True)
             .limit(1)
             .execute()
         )
-        if not registry.data:
+        if not (registry.data or []):
             raise HTTPException(status_code=404, detail="ETF를 찾을 수 없습니다.")
 
         data = (
@@ -335,7 +335,7 @@ async def get_etf_detail(ticker: str):
             .limit(1)
             .execute()
         )
-        if not data.data:
+        if not (data.data or []):
             raise HTTPException(status_code=404, detail="ETF 상품 데이터를 아직 동기화하지 못했습니다.")
         return {**registry.data[0], **data.data[0], "ticker": normalized}
     except HTTPException:
