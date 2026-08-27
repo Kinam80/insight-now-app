@@ -33,6 +33,13 @@ REQUEST_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 DESCRIPTION_MARKER = "## 상품 핵심 정보"
+# Yahoo 상위 스크리너의 구성 변화와 무관하게 앱에서 자주 조회되는 대표 미국 ETF를 항상 포함합니다.
+# 이 목록도 같은 Yahoo·yfinance 공개 원본으로 가격과 정식 상품명을 자동 갱신합니다.
+CORE_US_ETF_TICKERS = (
+    "SPY", "IVV", "VOO", "QQQ", "DIA", "IWM", "SOXX", "SMH", "XLK", "XLF",
+    "XLE", "XLV", "GLD", "SLV", "TLT", "IEF", "HYG", "LQD", "EEM", "ARKK",
+    "SCHD", "JEPI",
+)
 
 CATEGORY_KO = {
     "large blend": "미국 대형주 혼합형",
@@ -174,6 +181,9 @@ def _category_label(category: str | None, name: str) -> str:
     name_lower = name.lower()
     theme_map = [
         (("semiconductor", "chip"), "반도체·AI 인프라형"),
+        (("s&p 500", "s&p500", "large cap"), "미국 대형주 시장 대표지수형"),
+        (("nasdaq", "qqq"), "미국 나스닥·성장주형"),
+        (("russell", "small cap", "smallcap"), "미국 중소형주형"),
         (("technology", "tech", "software", "cloud"), "정보기술·소프트웨어형"),
         (("gold", "silver", "metal", "miners"), "귀금속·광산형"),
         (("energy", "oil", "gas", "uranium", "mlp"), "에너지·인프라형"),
@@ -294,7 +304,9 @@ def _korean_etf_description(ticker: str, name: str, metadata: dict[str, Any]) ->
     table = "\n".join(f"| {label} | {value} |" for label, value in rows)
     source_time = metadata.get("source_updated_at") or metadata.get("synced_at")
     source_display = str(source_time).replace("T", " ")[:19] if source_time else "최근 동기화"
-    return f"""## {ticker} 상품 핵심 정보
+    return f"""## 상품 핵심 정보
+
+**종목코드:** {ticker}
 
 **공식 상품명:** {name}
 
@@ -588,6 +600,25 @@ def refresh_etf_universe(limit: int = 100) -> dict[str, Any]:
     if not quote_by_ticker:
         raise RuntimeError("국내·해외 ETF 원본을 모두 불러오지 못했습니다.")
 
+    # 상위 스크리너는 시장 상황에 따라 구성이 달라지므로, 대표지수·섹터·채권 ETF는
+    # 공개 Yahoo 검색의 정식명칭과 yfinance 일괄 시세를 결합해 항상 자동 편입합니다.
+    missing_core_tickers = [ticker for ticker in CORE_US_ETF_TICKERS if ticker not in quote_by_ticker]
+    core_prices = batch_latest_prices(missing_core_tickers)
+    core_names = lookup_yahoo_etf_names(list(core_prices))
+    for ticker, price in core_prices.items():
+        searched = core_names.get(ticker, {})
+        quote_by_ticker[ticker] = {
+            "symbol": ticker,
+            "quoteType": "ETF",
+            "longName": searched.get("longName") or ticker,
+            "shortName": searched.get("shortName"),
+            "regularMarketPrice": price,
+            "currency": "USD",
+            "fullExchangeName": searched.get("fullExchangeName"),
+            "exchange": searched.get("exchange"),
+            "_source": searched.get("_source") or "Yahoo Finance 일괄 시세 갱신",
+        }
+
     registered = 0
     registry_failures = 0
 
@@ -639,7 +670,8 @@ def refresh_etf_universe(limit: int = 100) -> dict[str, Any]:
 
     return {
         "discovered": len(quote_by_ticker),
-        "discovered_us": len(us_quotes),
+        "discovered_us": len(us_quotes) + len(core_prices),
+        "core_us_added": len(core_prices),
         "discovered_krx": len(krx_quotes),
         "registered": registered,
         "active_tickers": len(active_tickers),
