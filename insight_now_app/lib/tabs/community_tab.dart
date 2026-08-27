@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../constants/api_constants.dart';
 
@@ -21,13 +23,23 @@ class _CommunityTabState extends State<CommunityTab>
   static const _mint = Color(0xFF4FD1C5);
 
   late Future<_CommunitySnapshot> _snapshot;
+  final TextEditingController _liveInput = TextEditingController();
   Timer? _refreshTimer;
+  Timer? _heartbeatTimer;
+  WebSocketChannel? _liveChannel;
+  StreamSubscription<dynamic>? _liveSubscription;
   String _filter = 'all';
+  String _nickname = '투자러';
+  bool _liveConnected = false;
+  int _onlineCount = 0;
+  List<_LiveMessage> _liveMessages = const [];
+  _CommunityProfile _profile = const _CommunityProfile.empty();
 
   @override
   void initState() {
     super.initState();
     _snapshot = _fetchFeed();
+    _initializeLiveLounge();
     _refreshTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       if (mounted) _reload(silent: true);
     });
@@ -36,6 +48,10 @@ class _CommunityTabState extends State<CommunityTab>
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _heartbeatTimer?.cancel();
+    _liveSubscription?.cancel();
+    _liveChannel?.sink.close();
+    _liveInput.dispose();
     super.dispose();
   }
 
@@ -54,6 +70,219 @@ class _CommunityTabState extends State<CommunityTab>
       throw Exception('커뮤니티 응답 형식이 올바르지 않습니다.');
     }
     return _CommunitySnapshot.fromJson(body);
+  }
+
+  Future<void> _initializeLiveLounge() async {
+    final preferences = await SharedPreferences.getInstance();
+    final savedNickname = preferences.getString('moneytalk_nickname');
+    if (savedNickname != null && savedNickname.length >= 2) {
+      _nickname = savedNickname;
+    }
+    await Future.wait([_loadProfile(), _loadLiveHistory()]);
+    _connectLiveLounge();
+  }
+
+  Future<void> _saveNickname(String nickname) async {
+    final clean = nickname.trim();
+    if (clean.length < 2) return;
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString('moneytalk_nickname', clean);
+    if (!mounted) return;
+    setState(() => _nickname = clean);
+    await _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final response = await http
+          .get(
+            Uri.parse(
+              '${ApiConstants.baseUrl}/api/chat/community/profile/${Uri.encodeComponent(_nickname)}',
+            ),
+          )
+          .timeout(const Duration(seconds: 15));
+      final body = jsonDecode(utf8.decode(response.bodyBytes));
+      if (response.statusCode == 200 && body is Map && body['profile'] is Map) {
+        if (mounted) {
+          setState(
+            () => _profile = _CommunityProfile.fromJson(
+              Map<String, dynamic>.from(body['profile'] as Map),
+            ),
+          );
+        }
+      }
+    } catch (_) {
+      // 포인트 카드 오류가 실시간 라운지 이용을 막지 않도록 조용히 재시도합니다.
+    }
+  }
+
+  Future<void> _loadLiveHistory() async {
+    try {
+      final response = await http
+          .get(
+            Uri.parse(
+              '${ApiConstants.baseUrl}/api/chat/community/live/messages?limit=50',
+            ),
+          )
+          .timeout(const Duration(seconds: 15));
+      final body = jsonDecode(utf8.decode(response.bodyBytes));
+      if (response.statusCode == 200 && body is Map) {
+        final rawMessages = body['messages'];
+        if (mounted && rawMessages is List) {
+          setState(() {
+            _liveMessages = rawMessages
+                .whereType<Map>()
+                .map(
+                  (item) =>
+                      _LiveMessage.fromJson(Map<String, dynamic>.from(item)),
+                )
+                .toList();
+            _onlineCount =
+                (body['online_count'] as num?)?.toInt() ?? _onlineCount;
+          });
+        }
+      }
+    } catch (_) {
+      // 연결되면 WebSocket 초기 메시지로 다시 복원됩니다.
+    }
+  }
+
+  Uri get _liveSocketUri {
+    final base = Uri.parse(ApiConstants.baseUrl);
+    return base.replace(
+      scheme: base.scheme == 'https' ? 'wss' : 'ws',
+      path: '/api/chat/community/live',
+      query: null,
+    );
+  }
+
+  void _connectLiveLounge() {
+    _heartbeatTimer?.cancel();
+    _liveSubscription?.cancel();
+    _liveChannel?.sink.close();
+    try {
+      final channel = WebSocketChannel.connect(_liveSocketUri);
+      _liveChannel = channel;
+      _liveSubscription = channel.stream.listen(
+        _handleLiveEvent,
+        onError: (_) => _handleLiveDisconnect(),
+        onDone: _handleLiveDisconnect,
+      );
+    } catch (_) {
+      _scheduleReconnect();
+    }
+  }
+
+  void _handleLiveEvent(dynamic rawEvent) {
+    try {
+      final event = jsonDecode(rawEvent.toString());
+      if (event is! Map) return;
+      final type = event['type']?.toString();
+      if (type == 'connected') {
+        final rawMessages = event['messages'];
+        if (mounted) {
+          setState(() {
+            _liveConnected = true;
+            _onlineCount = (event['online_count'] as num?)?.toInt() ?? 0;
+            _liveMessages = rawMessages is List
+                ? rawMessages
+                      .whereType<Map>()
+                      .map(
+                        (item) => _LiveMessage.fromJson(
+                          Map<String, dynamic>.from(item),
+                        ),
+                      )
+                      .toList()
+                : _liveMessages;
+          });
+        }
+        _heartbeatTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+          _liveChannel?.sink.add(jsonEncode({'type': 'ping'}));
+        });
+      } else if (type == 'live_message' && event['message'] is Map) {
+        final message = _LiveMessage.fromJson(
+          Map<String, dynamic>.from(event['message'] as Map),
+        );
+        if (mounted) {
+          setState(() {
+            _liveMessages = [
+              ..._liveMessages.where((item) => item.id != message.id),
+              message,
+            ];
+            _onlineCount =
+                (event['online_count'] as num?)?.toInt() ?? _onlineCount;
+          });
+        }
+        if (message.nickname == _nickname) {
+          _loadProfile();
+          if (message.rewardPoints > 0 && mounted) {
+            _showMessage(
+              '머니 포인트 +${message.rewardPoints}P · ${message.profile.title}',
+            );
+          }
+        }
+      } else if (type == 'presence') {
+        if (mounted) {
+          setState(
+            () => _onlineCount = (event['online_count'] as num?)?.toInt() ?? 0,
+          );
+        }
+      } else if (type == 'error' && mounted) {
+        _showMessage(event['message']?.toString() ?? '라운지 메시지를 전송하지 못했습니다.');
+      }
+    } catch (_) {
+      // 형식이 맞지 않는 네트워크 이벤트는 무시합니다.
+    }
+  }
+
+  void _handleLiveDisconnect() {
+    _heartbeatTimer?.cancel();
+    if (mounted) setState(() => _liveConnected = false);
+    _scheduleReconnect();
+  }
+
+  void _scheduleReconnect() {
+    if (!mounted) return;
+    Timer(const Duration(seconds: 4), () {
+      if (mounted && !_liveConnected) _connectLiveLounge();
+    });
+  }
+
+  Future<void> _sendLiveMessage() async {
+    final body = _liveInput.text.trim();
+    if (body.isEmpty) return;
+    _liveInput.clear();
+    final payload = {'type': 'send', 'nickname': _nickname, 'body': body};
+    if (_liveConnected && _liveChannel != null) {
+      _liveChannel!.sink.add(jsonEncode(payload));
+      return;
+    }
+    try {
+      final response = await http
+          .post(
+            Uri.parse(
+              '${ApiConstants.baseUrl}/api/chat/community/live/messages',
+            ),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({'nickname': _nickname, 'body': body}),
+          )
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode >= 300) throw Exception();
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      final reward = decoded is Map && decoded['message'] is Map
+          ? (decoded['message'] as Map)['reward']
+          : null;
+      final awarded = reward is Map
+          ? (reward['awarded'] as num?)?.toInt() ?? 0
+          : 0;
+      if (awarded > 0 && mounted) {
+        _showMessage('머니 포인트 +${awarded}P · 실시간 라운지 참여');
+      }
+      await _loadLiveHistory();
+      await _loadProfile();
+    } catch (_) {
+      if (mounted) _showMessage('실시간 라운지에 메시지를 보내지 못했습니다.');
+    }
   }
 
   Future<void> _reload({bool silent = false}) async {
@@ -90,29 +319,44 @@ class _CommunityTabState extends State<CommunityTab>
   }
 
   Future<void> _openDiscussion(_CommunityPost post) async {
-    final updated = await showModalBottomSheet<bool>(
+    final updated = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _DiscussionSheet(post: post),
+      builder: (_) => _DiscussionSheet(post: post, initialNickname: _nickname),
     );
-    if (updated == true) {
+    if (updated != null) {
+      await _saveNickname(updated['nickname']?.toString() ?? _nickname);
       await _reload(silent: true);
+      _showReward(updated['reward']);
     }
   }
 
   Future<void> _openComposer({String initialKind = 'proof'}) async {
-    final posted = await showModalBottomSheet<bool>(
+    final posted = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _ComposerSheet(initialKind: initialKind),
+      builder: (_) =>
+          _ComposerSheet(initialKind: initialKind, initialNickname: _nickname),
     );
-    if (posted == true) await _reload(silent: true);
+    if (posted != null) {
+      await _saveNickname(posted['nickname']?.toString() ?? _nickname);
+      await _reload(silent: true);
+      _showReward(posted['reward']);
+    }
+  }
+
+  void _showReward(dynamic reward) {
+    if (reward is! Map) return;
+    final awarded = (reward['awarded'] as num?)?.toInt() ?? 0;
+    if (awarded <= 0) return;
+    final title = reward['title']?.toString() ?? '새싹 개미';
+    _showMessage('머니 포인트 +${awarded}P · $title');
   }
 
   Future<String?> _askNickname() async {
-    final controller = TextEditingController(text: '투자러');
+    final controller = TextEditingController(text: _nickname);
     final nickname = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -134,7 +378,11 @@ class _CommunityTabState extends State<CommunityTab>
             child: const Text('취소'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            onPressed: () async {
+              final nickname = controller.text.trim();
+              await _saveNickname(nickname);
+              if (context.mounted) Navigator.pop(context, nickname);
+            },
             child: const Text('확인'),
           ),
         ],
@@ -175,6 +423,8 @@ class _CommunityTabState extends State<CommunityTab>
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 104),
                 children: [
                   _buildHero(feed),
+                  const SizedBox(height: 16),
+                  _buildLiveLounge(),
                   const SizedBox(height: 16),
                   _buildQuickActions(),
                   const SizedBox(height: 20),
@@ -265,6 +515,219 @@ class _CommunityTabState extends State<CommunityTab>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildLiveLounge() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _mint.withValues(alpha: 0.28)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: _mint.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.forum_rounded, color: _mint, size: 19),
+              ),
+              const SizedBox(width: 9),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '불타는 개미 라운지',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      '실시간 투자 대화 · 매수·매도 권유는 금지',
+                      style: TextStyle(color: Colors.white54, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              _liveStateBadge(),
+            ],
+          ),
+          const SizedBox(height: 12),
+          InkWell(
+            onTap: () async {
+              await _askNickname();
+              await _loadProfile();
+            },
+            borderRadius: BorderRadius.circular(13),
+            child: Ink(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Row(
+                children: [
+                  Text(_profile.badge, style: const TextStyle(fontSize: 18)),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      '$_nickname · ${_profile.title} · ${_profile.points}P',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.edit_rounded,
+                    color: Colors.white38,
+                    size: 15,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '머니 포인트는 현금화·양도·거래가 불가능한 명예·배지용 포인트입니다.',
+              style: TextStyle(color: Colors.white38, fontSize: 10),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 150,
+            child: _liveMessages.isEmpty
+                ? const Center(
+                    child: Text(
+                      '지금 라운지의 첫 대화를 시작해 보세요.',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                  )
+                : ListView.separated(
+                    reverse: true,
+                    itemCount: _liveMessages.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 7),
+                    itemBuilder: (context, index) {
+                      final message =
+                          _liveMessages[_liveMessages.length - 1 - index];
+                      return _buildLiveMessage(message);
+                    },
+                  ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _liveInput,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _sendLiveMessage(),
+                  maxLength: 300,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: InputDecoration(
+                    counterText: '',
+                    hintText: _liveConnected
+                        ? '지금 시장은 어떤가요?'
+                        : '연결을 복구하는 중입니다…',
+                    hintStyle: const TextStyle(color: Colors.white38),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 13,
+                      vertical: 11,
+                    ),
+                    filled: true,
+                    fillColor: Colors.black.withValues(alpha: 0.14),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(13),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filled(
+                onPressed: _sendLiveMessage,
+                style: IconButton.styleFrom(
+                  backgroundColor: _mint,
+                  foregroundColor: const Color(0xFF102033),
+                ),
+                icon: const Icon(Icons.send_rounded, size: 19),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _liveStateBadge() {
+    final label = _liveConnected ? 'LIVE $_onlineCount명' : '연결 중';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: (_liveConnected ? _mint : Colors.white54).withValues(
+          alpha: 0.14,
+        ),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: _liveConnected ? _mint : Colors.white54,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLiveMessage(_LiveMessage message) {
+    final mine = message.nickname == _nickname;
+    return Align(
+      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 275),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: mine
+              ? _mint.withValues(alpha: 0.16)
+              : Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${message.profile.badge} ${message.nickname} · ${message.profile.title}',
+              style: TextStyle(
+                color: mine ? _mint : _gold,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              message.body,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -588,16 +1051,20 @@ class _AutoBadge extends StatelessWidget {
 }
 
 class _ComposerSheet extends StatefulWidget {
-  const _ComposerSheet({required this.initialKind});
+  const _ComposerSheet({
+    required this.initialKind,
+    required this.initialNickname,
+  });
 
   final String initialKind;
+  final String initialNickname;
 
   @override
   State<_ComposerSheet> createState() => _ComposerSheetState();
 }
 
 class _ComposerSheetState extends State<_ComposerSheet> {
-  final _nickname = TextEditingController(text: '투자러');
+  late final TextEditingController _nickname;
   final _body = TextEditingController();
   final _ticker = TextEditingController();
   final _performance = TextEditingController();
@@ -608,6 +1075,7 @@ class _ComposerSheetState extends State<_ComposerSheet> {
   void initState() {
     super.initState();
     _kind = widget.initialKind;
+    _nickname = TextEditingController(text: widget.initialNickname);
   }
 
   @override
@@ -646,8 +1114,12 @@ class _ComposerSheetState extends State<_ComposerSheet> {
       if (response.statusCode >= 300) {
         throw Exception();
       }
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
       if (mounted) {
-        Navigator.pop(context, true);
+        Navigator.pop(context, {
+          'nickname': _nickname.text.trim(),
+          'reward': decoded is Map ? decoded['reward'] : null,
+        });
       }
     } catch (_) {
       if (mounted) {
@@ -823,18 +1295,25 @@ class _CommunitySnapshot {
 }
 
 class _DiscussionSheet extends StatefulWidget {
-  const _DiscussionSheet({required this.post});
+  const _DiscussionSheet({required this.post, required this.initialNickname});
 
   final _CommunityPost post;
+  final String initialNickname;
 
   @override
   State<_DiscussionSheet> createState() => _DiscussionSheetState();
 }
 
 class _DiscussionSheetState extends State<_DiscussionSheet> {
-  final _nickname = TextEditingController(text: '투자러');
+  late final TextEditingController _nickname;
   final _comment = TextEditingController();
   bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nickname = TextEditingController(text: widget.initialNickname);
+  }
 
   @override
   void dispose() {
@@ -863,8 +1342,12 @@ class _DiscussionSheetState extends State<_DiscussionSheet> {
       if (response.statusCode >= 300) {
         throw Exception();
       }
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
       if (mounted) {
-        Navigator.pop(context, true);
+        Navigator.pop(context, {
+          'nickname': _nickname.text.trim(),
+          'reward': decoded is Map ? decoded['reward'] : null,
+        });
       }
     } catch (_) {
       if (mounted) {
@@ -1019,6 +1502,75 @@ class _DiscussionSheetState extends State<_DiscussionSheet> {
       ),
       counterStyle: const TextStyle(color: Colors.white38),
       isDense: true,
+    );
+  }
+}
+
+class _CommunityProfile {
+  const _CommunityProfile({
+    required this.points,
+    required this.level,
+    required this.title,
+    required this.badge,
+    required this.nextLevelPoints,
+  });
+
+  const _CommunityProfile.empty()
+    : points = 0,
+      level = 1,
+      title = '새싹 개미',
+      badge = '🌱',
+      nextLevelPoints = 60;
+
+  final int points;
+  final int level;
+  final String title;
+  final String badge;
+  final int? nextLevelPoints;
+
+  factory _CommunityProfile.fromJson(Map<String, dynamic> json) {
+    return _CommunityProfile(
+      points: (json['points'] as num?)?.toInt() ?? 0,
+      level: (json['level'] as num?)?.toInt() ?? 1,
+      title: json['title']?.toString() ?? '새싹 개미',
+      badge: json['badge']?.toString() ?? '🌱',
+      nextLevelPoints: (json['next_level_points'] as num?)?.toInt(),
+    );
+  }
+}
+
+class _LiveMessage {
+  const _LiveMessage({
+    required this.id,
+    required this.nickname,
+    required this.body,
+    required this.createdAt,
+    required this.profile,
+    required this.rewardPoints,
+  });
+
+  final String id;
+  final String nickname;
+  final String body;
+  final DateTime? createdAt;
+  final _CommunityProfile profile;
+  final int rewardPoints;
+
+  factory _LiveMessage.fromJson(Map<String, dynamic> json) {
+    final rawProfile = json['profile'];
+    return _LiveMessage(
+      id: json['id']?.toString() ?? '',
+      nickname: json['nickname']?.toString() ?? '익명 개미',
+      body: json['body']?.toString() ?? '',
+      createdAt: DateTime.tryParse(
+        json['created_at']?.toString() ?? '',
+      )?.toLocal(),
+      profile: rawProfile is Map
+          ? _CommunityProfile.fromJson(Map<String, dynamic>.from(rawProfile))
+          : const _CommunityProfile.empty(),
+      rewardPoints: json['reward'] is Map
+          ? ((json['reward'] as Map)['awarded'] as num?)?.toInt() ?? 0
+          : 0,
     );
   }
 }

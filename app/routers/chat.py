@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from app.database import supabase_admin as supabase
@@ -15,6 +17,55 @@ router = APIRouter(prefix="/chat", tags=["투자 커뮤니티"])
 MAX_POSTS = 240
 REACTION_EMOJIS = {"🔥", "👏", "📌", "🚀"}
 BLOCKED_TERMS = ("자살", "죽어", "죽여", "한강 가", "혐오")
+LIVE_MESSAGE_COOLDOWN_SECONDS = 12
+DAILY_POINT_CAP = 60
+POINT_RULES = {
+    "community_post": (20, "투자 기록 작성"),
+    "community_comment": (5, "건설적 대화 참여"),
+    "live_message": (2, "실시간 라운지 참여"),
+}
+LEVELS: tuple[tuple[int, str, str], ...] = (
+    (0, "새싹 개미", "🌱"),
+    (60, "시장 관찰자", "🔎"),
+    (180, "인사이트 메이커", "💡"),
+    (420, "수익 인증러", "📈"),
+    (900, "머니톡 마스터", "🏆"),
+)
+_recent_live_messages: dict[str, float] = {}
+
+
+class LiveConnectionManager:
+    """단일 웹 인스턴스의 실시간 라운지 연결을 관리합니다.
+
+    메시지는 Supabase에도 즉시 저장하므로 연결이 끊겨도 HTTP 기록 피드로 복구됩니다.
+    """
+
+    def __init__(self) -> None:
+        self._connections: set[WebSocket] = set()
+
+    @property
+    def online_count(self) -> int:
+        return len(self._connections)
+
+    async def connect(self, websocket: WebSocket) -> None:
+        await websocket.accept()
+        self._connections.add(websocket)
+
+    def disconnect(self, websocket: WebSocket) -> None:
+        self._connections.discard(websocket)
+
+    async def broadcast(self, payload: dict[str, Any]) -> None:
+        stale: list[WebSocket] = []
+        for connection in tuple(self._connections):
+            try:
+                await connection.send_json(payload)
+            except Exception:
+                stale.append(connection)
+        for connection in stale:
+            self.disconnect(connection)
+
+
+live_connections = LiveConnectionManager()
 
 
 class MessageRequest(BaseModel):
@@ -40,6 +91,11 @@ class CommunityCommentRequest(BaseModel):
     nickname: str = Field(min_length=2, max_length=18)
     post_id: str = Field(min_length=1, max_length=64)
     body: str = Field(min_length=1, max_length=400)
+
+
+class LiveMessageRequest(BaseModel):
+    nickname: str = Field(min_length=2, max_length=18)
+    body: str = Field(min_length=1, max_length=300)
 
 
 def _clean_text(value: str, limit: int) -> str:
@@ -96,6 +152,172 @@ def _decode_row(row: dict[str, Any]) -> dict[str, Any]:
 
 def _encode_payload(payload: dict[str, Any]) -> str:
     return json.dumps({"source": "insight_now_community", "v": 1, **payload}, ensure_ascii=False)
+
+
+def _level_for(points: int) -> dict[str, Any]:
+    level_index = 0
+    for index, (minimum, _, _) in enumerate(LEVELS):
+        if points >= minimum:
+            level_index = index
+    minimum, title, badge = LEVELS[level_index]
+    next_minimum = LEVELS[level_index + 1][0] if level_index + 1 < len(LEVELS) else None
+    return {
+        "level": level_index + 1,
+        "title": title,
+        "badge": badge,
+        "points": points,
+        "current_level_min": minimum,
+        "next_level_points": next_minimum,
+    }
+
+
+def _reward_profile(nickname: str) -> dict[str, Any]:
+    safe_nickname = _clean_text(nickname, 18)
+    rewards = [
+        row
+        for row in (_decode_row(item) for item in _read_rows(MAX_POSTS))
+        if row.get("type") == "reward" and row.get("nickname") == safe_nickname
+    ]
+    total = sum(int(row.get("points") or 0) for row in rewards)
+    return {"nickname": safe_nickname, **_level_for(total)}
+
+
+def _award_points(nickname: str, action: str) -> dict[str, Any]:
+    """동일 일자에 과도한 반복 활동으로 포인트가 쌓이지 않도록 상한을 적용합니다."""
+    safe_nickname = _clean_text(nickname, 18)
+    requested, reason = POINT_RULES[action]
+    today = datetime.now(timezone.utc).date()
+    today_earned = 0
+    for row in (_decode_row(item) for item in _read_rows(MAX_POSTS)):
+        if row.get("type") != "reward" or row.get("nickname") != safe_nickname:
+            continue
+        try:
+            created = datetime.fromisoformat(str(row.get("created_at")).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if created.date() == today:
+            today_earned += max(0, int(row.get("points") or 0))
+    awarded = max(0, min(requested, DAILY_POINT_CAP - today_earned))
+    if awarded:
+        supabase.table("chat_messages").insert(
+            {
+                "user_email": safe_nickname,
+                "content": _encode_payload(
+                    {
+                        "type": "reward",
+                        "nickname": safe_nickname,
+                        "points": awarded,
+                        "reason": reason,
+                        "action": action,
+                    }
+                ),
+            }
+        ).execute()
+    profile = _reward_profile(safe_nickname)
+    return {**profile, "awarded": awarded, "reason": reason}
+
+
+def _community_leaderboard(limit: int = 20) -> list[dict[str, Any]]:
+    """최근 활동 기준의 명예 포인트 순위를 제공합니다.
+
+    현행 레거시 저장 구조는 chat_messages를 사용하므로, 대규모 공개 런칭 전에는
+    별도 reward ledger 테이블과 인증 사용자 ID로 이전해야 합니다.
+    """
+    totals: dict[str, int] = {}
+    for row in (_decode_row(item) for item in _read_rows(MAX_POSTS)):
+        if row.get("type") != "reward":
+            continue
+        nickname = str(row.get("nickname") or "").strip()
+        if nickname:
+            totals[nickname] = totals.get(nickname, 0) + int(row.get("points") or 0)
+    leaderboard = [
+        {"nickname": nickname, **_level_for(max(0, points))}
+        for nickname, points in totals.items()
+    ]
+    leaderboard.sort(key=lambda profile: int(profile["points"]), reverse=True)
+    return leaderboard[: min(max(limit, 1), 50)]
+
+
+def admin_adjust_points(nickname: str, delta: int, reason: str) -> dict[str, Any]:
+    """관리자 전용의 비현금성 명예 포인트 수동 조정입니다."""
+    safe_nickname = _clean_text(nickname, 18)
+    safe_reason = _clean_text(reason, 80)
+    if not delta:
+        raise HTTPException(status_code=422, detail="조정할 포인트를 입력해 주세요.")
+    current = _reward_profile(safe_nickname)
+    applied_delta = min(delta, int(current["points"])) if delta < 0 else delta
+    if not applied_delta:
+        raise HTTPException(status_code=422, detail="현재 포인트보다 더 많이 차감할 수 없습니다.")
+    supabase.table("chat_messages").insert(
+        {
+            "user_email": safe_nickname,
+            "content": _encode_payload(
+                {
+                    "type": "reward",
+                    "nickname": safe_nickname,
+                    "points": applied_delta,
+                    "reason": f"관리자 조정: {safe_reason}",
+                    "action": "admin_adjustment",
+                }
+            ),
+        }
+    ).execute()
+    return {
+        "nickname": safe_nickname,
+        "adjusted": applied_delta,
+        "reason": safe_reason,
+        **_reward_profile(safe_nickname),
+    }
+
+
+def _live_message_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(payload.get("id") or ""),
+        "nickname": str(payload.get("nickname") or "익명 개미"),
+        "body": str(payload.get("body") or ""),
+        "created_at": payload.get("created_at"),
+        "profile": payload.get("profile") or _level_for(0),
+    }
+
+
+def _create_live_message(nickname: str, body: str) -> dict[str, Any]:
+    safe_nickname = _clean_text(nickname, 18)
+    safe_body = _clean_text(body, 300)
+    now_monotonic = time.monotonic()
+    last_sent = _recent_live_messages.get(safe_nickname, 0.0)
+    if now_monotonic - last_sent < LIVE_MESSAGE_COOLDOWN_SECONDS:
+        raise HTTPException(
+            status_code=429,
+            detail=f"라운지 메시지는 {LIVE_MESSAGE_COOLDOWN_SECONDS}초 간격으로 보낼 수 있습니다.",
+        )
+    _recent_live_messages[safe_nickname] = now_monotonic
+    reward = _award_points(safe_nickname, "live_message")
+    response = supabase.table("chat_messages").insert(
+        {
+            "user_email": safe_nickname,
+            "content": _encode_payload(
+                {
+                    "type": "live_chat",
+                    "nickname": safe_nickname,
+                    "body": safe_body,
+                    "profile": _level_for(int(reward["points"])),
+                }
+            ),
+        }
+    ).execute()
+    message = _live_message_from_payload(_decode_row((response.data or [{}])[0]))
+    message["reward"] = reward
+    return message
+
+
+def _live_history(limit: int = 50) -> list[dict[str, Any]]:
+    messages = [
+        _live_message_from_payload(row)
+        for row in (_decode_row(item) for item in _read_rows(MAX_POSTS))
+        if row.get("type") == "live_chat"
+    ]
+    messages.sort(key=lambda item: str(item.get("created_at") or ""))
+    return messages[-min(max(limit, 1), 80) :]
 
 
 def _community_snapshot(limit: int = 40) -> dict[str, Any]:
@@ -186,6 +408,74 @@ def get_community_feed(limit: int = 40):
     return {"status": "success", **snapshot, "updated_at": datetime.now(timezone.utc).isoformat()}
 
 
+@router.get("/community/profile/{nickname}")
+def get_community_profile(nickname: str):
+    return {"status": "success", "profile": _reward_profile(nickname)}
+
+
+@router.get("/community/live/messages")
+def get_live_messages(limit: int = 50):
+    return {
+        "status": "success",
+        "messages": _live_history(limit),
+        "online_count": live_connections.online_count,
+    }
+
+
+@router.post("/community/live/messages")
+async def send_live_message(data: LiveMessageRequest):
+    message = await asyncio.to_thread(_create_live_message, data.nickname, data.body)
+    await live_connections.broadcast(
+        {"type": "live_message", "message": message, "online_count": live_connections.online_count}
+    )
+    return {"status": "created", "message": message}
+
+
+@router.websocket("/community/live")
+async def live_lounge_socket(websocket: WebSocket):
+    await live_connections.connect(websocket)
+    try:
+        history = await asyncio.to_thread(_live_history, 50)
+        await websocket.send_json(
+            {
+                "type": "connected",
+                "messages": history,
+                "online_count": live_connections.online_count,
+                "heartbeat_seconds": 25,
+            }
+        )
+        await live_connections.broadcast(
+            {"type": "presence", "online_count": live_connections.online_count}
+        )
+        while True:
+            incoming = await websocket.receive_json()
+            event_type = str(incoming.get("type") or "")
+            if event_type == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
+            if event_type != "send":
+                await websocket.send_json({"type": "error", "message": "지원하지 않는 라운지 요청입니다."})
+                continue
+            try:
+                message = await asyncio.to_thread(
+                    _create_live_message,
+                    str(incoming.get("nickname") or ""),
+                    str(incoming.get("body") or ""),
+                )
+                await live_connections.broadcast(
+                    {"type": "live_message", "message": message, "online_count": live_connections.online_count}
+                )
+            except HTTPException as exc:
+                await websocket.send_json({"type": "error", "message": str(exc.detail)})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        live_connections.disconnect(websocket)
+        await live_connections.broadcast(
+            {"type": "presence", "online_count": live_connections.online_count}
+        )
+
+
 @router.post("/community/posts")
 def create_community_post(data: CommunityPostRequest):
     nickname = _clean_text(data.nickname, 18)
@@ -202,7 +492,12 @@ def create_community_post(data: CommunityPostRequest):
     response = supabase.table("chat_messages").insert(
         {"user_email": nickname, "content": _encode_payload(payload)}
     ).execute()
-    return {"status": "created", "post": _decode_row((response.data or [{}])[0])}
+    reward = _award_points(nickname, "community_post")
+    return {
+        "status": "created",
+        "post": _decode_row((response.data or [{}])[0]),
+        "reward": reward,
+    }
 
 
 @router.post("/community/reactions")
@@ -249,4 +544,5 @@ def add_community_comment(data: CommunityCommentRequest):
             ),
         }
     ).execute()
-    return {"status": "created", "feed": _community_snapshot(40)}
+    reward = _award_points(nickname, "community_comment")
+    return {"status": "created", "feed": _community_snapshot(40), "reward": reward}

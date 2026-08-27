@@ -70,7 +70,7 @@ def get_posts(authorization: Optional[str] = Header(default=None)):
                     .execute()
                 post["is_purchased"] = bool(purchase.data)
 
-        return {"posts": posts}
+    return {"posts": posts}
 
 
 @router.get("/feed/latest")

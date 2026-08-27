@@ -4,6 +4,7 @@ import math
 import asyncio
 import secrets
 from datetime import datetime, timezone
+from typing import Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 import yfinance as yf
@@ -52,7 +53,8 @@ async def health_check():
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+        allow_credentials=False,
+
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -235,7 +237,8 @@ async def get_market_indices():
 # --- ETF 관리 API (등록 및 업데이트) ---
 
 @app.post("/api/etf/register")
-async def register_etf(data: EtfRegistration):
+async def register_etf(data: EtfRegistration, _: dict = Depends(admin.require_admin)):
+
     """새 종목번호를 등록하고 즉시 데이터를 갱신합니다."""
     try:
         add_to_registry(data.ticker, data.weight)
@@ -299,14 +302,15 @@ async def get_etf_detail(ticker: str):
 
 
 @app.post("/api/admin/update-etf")
-async def trigger_etf_update(_: None = Depends(require_admin_refresh_key)):
+async def trigger_etf_update(_: dict = Depends(admin.require_admin)):
     """전체 ETF 유니버스를 즉시 동기화합니다."""
     result = await asyncio.to_thread(refresh_etf_universe, 100)
     return {"message": "ETF 자동 동기화 완료", "details": result}
 
 # 삭제 기능을 위한 엔드포인트 추가
 @app.delete("/api/etf/unregister/{ticker}")
-async def unregister_etf(ticker: str):
+async def unregister_etf(ticker: str, _: dict = Depends(admin.require_admin)):
+
     """지정된 종목번호를 레지스트리에서 삭제합니다."""
     try:
         # Supabase에서 해당 ticker를 삭제하는 로직
@@ -392,7 +396,8 @@ class EtfDescriptionUpdate(BaseModel):
     description: str
 
 @app.post("/api/etf/update-description")
-async def update_etf_description(data: EtfDescriptionUpdate):
+async def update_etf_description(data: EtfDescriptionUpdate, _: dict = Depends(admin.require_admin)):
+
     try:
         # 이 통로를 통해 받은 데이터를 etf_data 테이블에 저장합니다.
         response = supabase.table("etf_data")\
@@ -410,7 +415,7 @@ class GovStatsUpdate(BaseModel):
     content: str
 
 @app.post("/api/admin/gov-stats")
-async def create_gov_stats(data: GovStatsUpdate):
+async def create_gov_stats(data: GovStatsUpdate, _: dict = Depends(admin.require_admin)):
     try:
         response = supabase.table("gov_stats").insert({
             "title": data.title,
@@ -435,7 +440,7 @@ async def get_gov_stats(limit: int = 20):
 
 
 @app.post("/api/admin/refresh-gov-stats")
-async def trigger_gov_stats_refresh(_: None = Depends(require_admin_refresh_key)):
+async def trigger_gov_stats_refresh(_: dict = Depends(admin.require_admin)):
     """KDI 최신 월간 경제동향을 즉시 동기화합니다."""
     result = await asyncio.to_thread(refresh_government_reports)
     translated_existing = await asyncio.to_thread(refresh_existing_korean_gov_reports, 10)
@@ -445,12 +450,3 @@ async def trigger_gov_stats_refresh(_: None = Depends(require_admin_refresh_key)
         "translated_existing": translated_existing,
     }
 
-
-
-@app.get("/api/admin/stats")
-async def get_admin_stats_direct():
-    return {"total_users": 100, "total_revenue": 50000, "total_posts": 10}
-
-@app.get("/api/admin/users")
-async def get_admin_users_direct():
-    return {"status": "success", "users": []}
