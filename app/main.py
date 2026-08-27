@@ -159,9 +159,19 @@ async def refresh_etfs_in_background():
             "etfs",
             "success",
             discovered=result.get("discovered", 0),
+            discovered_us=result.get("discovered_us", 0),
+            discovered_krx=result.get("discovered_krx", 0),
             registered=result.get("registered", 0),
-            updated=result.get("updated", 0),
-            failure_count=len(result.get("failures", [])),
+            active_tickers=result.get("active_tickers", 0),
+            price_updated=result.get("price_updated", 0),
+            description_enriched=result.get("description_enriched", 0),
+            registry_failure_count=result.get("registry_failure_count", 0),
+            failure_count=result.get("failure_count", 0),
+            failures=result.get("failures", []),
+            source=result.get("source"),
+            source_failure_count=result.get("source_failure_count", 0),
+            source_errors=result.get("source_errors", []),
+            completed_at=result.get("completed_at"),
         )
         print(f"📈 ETF 자동 갱신 완료: {result}")
     except Exception as exc:
@@ -270,16 +280,16 @@ async def get_etf_list():
         # 1. registry 목록을 가져옵니다.
         registry_res = supabase.table("etf_registry").select("*").eq("is_active", True).execute()
         
-        # 2. etf_data 전체를 가져옵니다.
-        data_res = supabase.table("etf_data").select("*").execute()
-        
-        # 3. 파이썬 로직으로 두 리스트를 합칩니다.
-                # 레거시 데이터에 남아 있을 수 있는 중복 티커를 API 수준에서 정리합니다.
+        # 2. etf_data는 갱신 시각 역순으로 읽어 동일 티커의 최신 검증 행만 선택합니다.
+        data_res = supabase.table("etf_data").select("*").order("updated_at", desc=True).execute()
+
+        # 3. 레거시 중복 행이 있어도 최신 가격·설명 데이터 한 건만 결합합니다.
         latest_data_by_ticker = {}
-        for item in data_res.data:
+        for item in data_res.data or []:
             ticker = item.get("ticker")
-            if ticker:
-                latest_data_by_ticker[str(ticker).upper()] = item
+            normalized = str(ticker).upper() if ticker else ""
+            if normalized and normalized not in latest_data_by_ticker:
+                latest_data_by_ticker[normalized] = item
 
         combined_by_ticker = {}
         for reg in registry_res.data:
@@ -287,7 +297,9 @@ async def get_etf_list():
             if not ticker:
                 continue
             match = latest_data_by_ticker.get(ticker, {})
-            # 레지스트리(reg) + 데이터(match)를 합치면 앱은 name·price를 바로 사용합니다.
+            # 현재 가격이 확인되지 않은 ETF는 오래된 빈 카드 대신 다음 자동 동기화까지 노출하지 않습니다.
+            if match.get("price") in (None, ""):
+                continue
             combined_by_ticker[ticker] = {**reg, **match, "ticker": ticker}
 
         return list(combined_by_ticker.values())
@@ -298,24 +310,37 @@ async def get_etf_list():
 
 @app.get("/api/etfs/{ticker}")
 async def get_etf_detail(ticker: str):
+    """레지스트리와 최신 상품 메타데이터를 결합해 상세 화면에 제공합니다."""
     try:
-        # 데이터가 여러 개여도 가장 최신 것 하나만 가져오도록 명시
-        response = supabase.table("etf_registry")\
-                            .select("*")\
-                            .eq("ticker", ticker)\
-                            .order("created_at", desc=True)\
-                            .limit(1)\
-                            .execute()
-        
-        # 데이터가 아예 없는 경우 404 처리
-        if not response.data or len(response.data) == 0:
+        normalized = ticker.strip().upper()
+        registry = (
+            supabase.table("etf_registry")
+            .select("*")
+            .eq("ticker", normalized)
+            .eq("is_active", True)
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not registry.data:
             raise HTTPException(status_code=404, detail="ETF를 찾을 수 없습니다.")
-        
-        return response.data[0]
-    except Exception as e:
-        # 에러 내용을 로그로 찍어서 확인
-        print(f"Error in get_etf_detail: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+
+        data = (
+            supabase.table("etf_data")
+            .select("*")
+            .eq("ticker", normalized)
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not data.data:
+            raise HTTPException(status_code=404, detail="ETF 상품 데이터를 아직 동기화하지 못했습니다.")
+        return {**registry.data[0], **data.data[0], "ticker": normalized}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"ETF 상세 조회 실패 ({ticker}): {type(exc).__name__}")
+        raise HTTPException(status_code=500, detail="ETF 상세 데이터를 불러오지 못했습니다.") from exc
 
 
 @app.post("/api/admin/update-etf")
