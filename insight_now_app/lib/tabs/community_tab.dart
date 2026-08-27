@@ -399,16 +399,7 @@ class _CommunityTabState extends State<CommunityTab>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _background,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openComposer,
-        backgroundColor: _gold,
-        foregroundColor: const Color(0xFF172030),
-        icon: const Icon(Icons.add_chart_rounded),
-        label: const Text(
-          '인증 올리기',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-      ),
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
         child: FutureBuilder<_CommunitySnapshot>(
           future: _snapshot,
@@ -420,7 +411,7 @@ class _CommunityTabState extends State<CommunityTab>
               onRefresh: _reload,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 104),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                 children: [
                   _buildHero(feed),
                   const SizedBox(height: 16),
@@ -735,7 +726,7 @@ class _CommunityTabState extends State<CommunityTab>
   Widget _buildQuickActions() {
     return Row(
       children: [
-        _quickAction(Icons.verified_rounded, '수익 인증', 'proof', _gold),
+        _quickAction(Icons.verified_rounded, '인증 올리기', 'proof', _gold),
         const SizedBox(width: 10),
         _quickAction(Icons.explore_rounded, '오늘의 예측', 'prediction', _mint),
         const SizedBox(width: 10),

@@ -28,6 +28,16 @@ def register_user(email, password, nickname):
     return result.data[0]
 
 
+def request_password_reset(email: str) -> None:
+    """계정 존재 여부를 노출하지 않고 Supabase의 비밀번호 재설정 메일을 요청합니다."""
+    try:
+        auth_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        auth_client.auth.reset_password_for_email(email)
+    except Exception:
+        # 계정 존재 여부, 메일 전송 설정, 공급자 오류를 외부에 노출하지 않습니다.
+        pass
+
+
 def authenticate_user(email, password):
     """기존 프로필 로그인과 Supabase Auth를 모두 지원합니다."""
     result = supabase.table("users").select("*").eq("email", email).execute()
