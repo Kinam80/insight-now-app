@@ -17,11 +17,6 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
-try:
-    from groq import Groq
-except ImportError:
-    Groq = None
-
 KST = ZoneInfo("Asia/Seoul")
 DEFAULT_AUTHOR_ID = "8d8aed4f-97da-4cbb-b552-dd07215dbc62"
 REPORT_CATEGORY = "레포트"
@@ -51,16 +46,6 @@ def _gemini_client() -> Any | None:
         from google import genai
 
         return genai.Client(api_key=api_key)
-    except Exception:
-        return None
-
-
-def _groq_client() -> Any | None:
-    api_key = os.getenv("GROQ_API_KEY")
-    if Groq is None or not api_key:
-        return None
-    try:
-        return Groq(api_key=api_key)
     except Exception:
         return None
 
@@ -201,7 +186,7 @@ def _ai_report(
     market: list[dict[str, Any]],
     recent_news: list[dict[str, str]],
 ) -> dict[str, str] | None:
-    """기존 레포트 흐름을 이어받는 정교한 Gemini 분석을 생성합니다."""
+    """Gemini만 사용해 기존 레포트 흐름을 이어받는 정교한 분석을 생성합니다."""
     client = _gemini_client()
 
     previous_content = str((previous or {}).get("content") or "이전 분석 레포트가 없습니다.")
@@ -275,30 +260,6 @@ def _ai_report(
         except Exception as exc:
             print(f"Gemini 일일 레포트 생성 실패: {type(exc).__name__}")
 
-    # Gemini 키가 없거나 일시 장애인 경우에도 동일한 장문 연속성 프롬프트로만 보조 생성합니다.
-    groq_client = _groq_client()
-    if groq_client is None:
-        return None
-    try:
-        response = groq_client.chat.completions.create(
-            model=os.getenv("GROQ_REPORT_MODEL", "llama-3.1-8b-instant"),
-            messages=[
-                {
-                    "role": "system",
-                    "content": "유효한 JSON만 반환하는 한국어 금융 편집자입니다.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.25,
-            max_tokens=2200,
-        )
-        parsed = _clean_json(response.choices[0].message.content or "")
-        if parsed is not None:
-            parsed["provider"] = "groq"
-            return parsed
-    except Exception as exc:
-        print(f"Groq 일일 레포트 생성 실패: {type(exc).__name__}")
     return None
 
 
@@ -377,7 +338,7 @@ def generate_and_upload_report(force: bool = False, min_interval_hours: int = 3)
             "status": "published",
             "id": created.get("id"),
             "title": data["title"],
-            "quality": f"{report.get('provider', 'unknown')}_continuity",
+            "quality": "gemini_continuity",
             "market_items": len(market),
             "news_items": len(recent_news),
             "hidden_placeholder_reports": hidden_placeholders,
