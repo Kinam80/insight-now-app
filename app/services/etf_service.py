@@ -482,6 +482,41 @@ def get_all_registered_tickers() -> list[str]:
         return []
 
 
+def batch_latest_prices(tickers: list[str]) -> dict[str, float]:
+    """등록 ETF의 종가를 최대 75개씩 묶어 가져와 개별 Yahoo 요청의 지연·제한을 피합니다."""
+    normalized = list(dict.fromkeys(ticker.strip().upper() for ticker in tickers if ticker))
+    prices: dict[str, float] = {}
+    for start in range(0, len(normalized), 75):
+        batch = normalized[start : start + 75]
+        market_symbols = [_market_symbol(ticker) for ticker in batch]
+        try:
+            frame = yf.download(
+                tickers=market_symbols,
+                period="5d",
+                interval="1d",
+                group_by="ticker",
+                auto_adjust=False,
+                threads=True,
+                progress=False,
+                timeout=15,
+            )
+        except Exception:
+            continue
+        for ticker, market_symbol in zip(batch, market_symbols):
+            try:
+                if len(market_symbols) == 1:
+                    close = frame["Close"].dropna()
+                else:
+                    close = frame[market_symbol]["Close"].dropna()
+                if not close.empty:
+                    value = _as_float(close.iloc[-1])
+                    if value is not None and value > 0:
+                        prices[ticker] = value
+            except Exception:
+                continue
+    return prices
+
+
 def refresh_etf_universe(limit: int = 100) -> dict[str, Any]:
     """국내·해외 유동성 ETF 발견, 가격·상품 설명 갱신, 기존 등록 종목 보강을 하나의 작업으로 수행합니다."""
     source_errors: list[str] = []
@@ -514,7 +549,24 @@ def refresh_etf_universe(limit: int = 100) -> dict[str, Any]:
         except Exception:
             registry_failures += 1
 
-    active_tickers = list(dict.fromkeys([*quote_by_ticker.keys(), *get_all_registered_tickers()]))
+    registered_tickers = get_all_registered_tickers()
+    active_tickers = list(dict.fromkeys([*quote_by_ticker.keys(), *registered_tickers]))
+    legacy_tickers = [ticker for ticker in registered_tickers if ticker not in quote_by_ticker]
+    legacy_prices = batch_latest_prices(legacy_tickers)
+    for ticker, price in legacy_prices.items():
+        existing = _latest_data_row(ticker) or {}
+        metadata = existing.get("holdings_json") if isinstance(existing.get("holdings_json"), dict) else {}
+        quote_by_ticker[ticker] = {
+            "symbol": ticker,
+            "quoteType": "ETF",
+            "longName": existing.get("name") or metadata.get("official_name") or ticker,
+            "regularMarketPrice": price,
+            "currency": metadata.get("currency"),
+            "fullExchangeName": metadata.get("exchange"),
+            "_market": metadata.get("market"),
+            "_source": "Yahoo Finance 일괄 시세 갱신",
+        }
+
     price_updated = 0
     description_enriched = 0
     failures: list[str] = []
@@ -535,6 +587,7 @@ def refresh_etf_universe(limit: int = 100) -> dict[str, Any]:
         "price_updated": price_updated,
         "description_enriched": description_enriched,
         "registry_failure_count": registry_failures,
+        "legacy_price_updated": len(legacy_prices),
         "failure_count": len(failures),
         "failures": failures[:10],
         "source_failure_count": len(source_errors),

@@ -164,6 +164,7 @@ async def refresh_etfs_in_background():
             registered=result.get("registered", 0),
             active_tickers=result.get("active_tickers", 0),
             price_updated=result.get("price_updated", 0),
+            legacy_price_updated=result.get("legacy_price_updated", 0),
             description_enriched=result.get("description_enriched", 0),
             registry_failure_count=result.get("registry_failure_count", 0),
             failure_count=result.get("failure_count", 0),
