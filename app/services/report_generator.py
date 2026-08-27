@@ -17,6 +17,11 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
+try:
+    from groq import Groq
+except ImportError:
+    Groq = None
+
 KST = ZoneInfo("Asia/Seoul")
 DEFAULT_AUTHOR_ID = "8d8aed4f-97da-4cbb-b552-dd07215dbc62"
 REPORT_CATEGORY = "레포트"
@@ -46,6 +51,16 @@ def _gemini_client() -> Any | None:
         from google import genai
 
         return genai.Client(api_key=api_key)
+    except Exception:
+        return None
+
+
+def _groq_client() -> Any | None:
+    api_key = os.getenv("GROQ_API_KEY")
+    if Groq is None or not api_key:
+        return None
+    try:
+        return Groq(api_key=api_key)
     except Exception:
         return None
 
@@ -248,15 +263,45 @@ def _ai_report(
 6. ## 다음 확인 항목: 후속 뉴스·지표·공시에서 확인할 조건
 7. ## 안내: 정보 제공 목적이며 특정 종목의 매수·매도·수익을 보장하지 않는다는 문장
 """
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config={"response_mime_type": "application/json"},
-        )
-        return _clean_json(response.text or "")
-    except Exception:
+    if client is not None:
+        try:
+            response = client.models.generate_content(
+                model=os.getenv("GEMINI_REPORT_MODEL", "gemini-2.5-flash"),
+                contents=prompt,
+                config={"response_mime_type": "application/json", "temperature": 0.25},
+            )
+            parsed = _clean_json(response.text or "")
+            if parsed is not None:
+                parsed["provider"] = "gemini"
+                return parsed
+        except Exception as exc:
+            print(f"Gemini 일일 레포트 생성 실패: {type(exc).__name__}")
+
+    # Gemini 키가 없거나 일시 장애인 경우에도 동일한 장문 연속성 프롬프트로만 보조 생성합니다.
+    groq_client = _groq_client()
+    if groq_client is None:
         return None
+    try:
+        response = groq_client.chat.completions.create(
+            model=os.getenv("GROQ_REPORT_MODEL", "llama-3.1-8b-instant"),
+            messages=[
+                {
+                    "role": "system",
+                    "content": "유효한 JSON만 반환하는 한국어 금융 편집자입니다.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.25,
+            max_tokens=2200,
+        )
+        parsed = _clean_json(response.choices[0].message.content or "")
+        if parsed is not None:
+            parsed["provider"] = "groq"
+            return parsed
+    except Exception as exc:
+        print(f"Groq 일일 레포트 생성 실패: {type(exc).__name__}")
+    return None
 
 
 def _hide_legacy_placeholder_reports(client: Client) -> int:
@@ -334,7 +379,7 @@ def generate_and_upload_report(force: bool = False, min_interval_hours: int = 3)
             "status": "published",
             "id": created.get("id"),
             "title": data["title"],
-            "quality": "gemini_continuity",
+            "quality": f"{report.get('provider', 'unknown')}_continuity",
             "market_items": len(market),
             "news_items": len(recent_news),
             "hidden_placeholder_reports": hidden_placeholders,
