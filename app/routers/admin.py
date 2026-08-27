@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -180,7 +181,15 @@ def adjust_community_points(data: PointAdjustmentRequest, _: dict = Depends(requ
 def get_automation_status(_: dict = Depends(require_admin)):
     from app.main import automation_status
 
-    return {"status": "success", "jobs": automation_status}
+    return {
+        "status": "success",
+        "jobs": automation_status,
+        "gemini": {
+            "configured": bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")),
+            "mode": "Gemini 전용 · 이전 레포트 연속성 분석",
+            "notice": "API 키 원문은 서버 또는 화면에서 조회·표시되지 않습니다.",
+        },
+    }
 
 
 @router.post("/automation/{job_name}/run")
