@@ -39,7 +39,7 @@ def _supabase_client() -> Client:
 
 
 def _gemini_client() -> Any | None:
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
         return None
     try:
