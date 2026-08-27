@@ -213,7 +213,7 @@ class _NewsTabState extends State<NewsTab> {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  "${item['premium_metrics']?['badge'] ?? 'HOT'} | 신뢰도 ${item['premium_metrics']?['insight_score'] ?? '85%'}",
+                  "${item['premium_metrics']?['badge'] ?? 'Yahoo Finance'} | ${item['premium_metrics']?['insight_score'] ?? '원문 제공'}",
                   style: const TextStyle(color: Colors.white60, fontSize: 11),
                 ),
               ),

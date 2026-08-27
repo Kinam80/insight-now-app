@@ -16,11 +16,6 @@ try:
 except ImportError:  # 배포 환경이 새 의존성을 설치하기 전에도 API 기동을 유지합니다.
     genai = None
 
-try:
-    from groq import Groq
-except ImportError:
-    Groq = None
-
 load_dotenv()
 
 MYMEMORY_TRANSLATE_URL = "https://api.mymemory.translated.net/get"
@@ -36,7 +31,21 @@ YAHOO_QUERIES = [
     {"query": "US dollar currency market", "category": "fx_rate"},
     {"query": "Korea stock market", "category": "kr_market"},
 ]
-MAX_ITEMS_PER_QUERY = 5
+MAX_ITEMS_PER_QUERY = 8
+# 시장 전반·상장기업·핵심 산업에 직접 관련되지 않은 Yahoo 제휴 보도자료는 앱에 저장하지 않습니다.
+MARKET_RELEVANCE_KEYWORDS = (
+    "stock", "stocks", "shares", "equity", "earnings", "revenue", "profit", "guidance",
+    "dividend", "buyback", "merger", "acquisition", "ipo", "rating", "price target",
+    "market", "index", "nasdaq", "s&p", "dow", "fed", "federal reserve", "interest rate",
+    "treasury", "bond", "yield", "inflation", "employment", "payroll", "gdp", "cpi",
+    "currency", "dollar", "won", "forex", "exchange rate", "oil", "gold", "etf",
+    "semiconductor", "chip", "banking", "finance", "tariff", "trade", "korea", "kospi",
+)
+SPECULATIVE_OR_IRRELEVANT_PATTERNS = (
+    "lunar eclipse", "blood moon", "community impact", "congratulates", "form 8.3",
+    "form-8.3", "form 8.5", "form-8.5", "appointment of", "appointed as",
+)
+PRESS_RELEASE_PUBLISHERS = ("globenewswire", "pr newswire", "business wire")
 REQUEST_HEADERS = {
     # Yahoo의 공개 검색 API는 서버성 커스텀 UA를 간헐적으로 차단하므로 표준 브라우저 형식을 사용합니다.
     "User-Agent": (
@@ -55,11 +64,22 @@ def _get_gemini_client():
     return genai.Client(api_key=api_key)
 
 
-def _get_groq_client():
-    api_key = os.getenv("GROQ_API_KEY")
-    if Groq is None or not api_key:
-        return None
-    return Groq(api_key=api_key)
+def _is_market_relevant_news(entry: dict[str, Any]) -> bool:
+    """Yahoo 검색 결과 중 투자·시장 맥락이 약한 홍보성·생활성 기사를 자동 제외합니다."""
+    title = str(entry.get("title") or "").strip().lower()
+    publisher = str(entry.get("publisher") or "").strip().lower()
+    related_tickers = [ticker for ticker in entry.get("relatedTickers", []) if ticker]
+    if not title or any(pattern in title for pattern in SPECULATIVE_OR_IRRELEVANT_PATTERNS):
+        return False
+    has_market_keyword = any(keyword in title for keyword in MARKET_RELEVANCE_KEYWORDS)
+    has_listed_market_signal = bool(related_tickers) and any(
+        keyword in title
+        for keyword in ("earnings", "revenue", "profit", "dividend", "shares", "stock", "rating", "target", "merger", "acquisition", "guidance", "price")
+    )
+    # 보도자료 배포사는 시장 신호가 명확한 경우에만 수용해 무관한 홍보 기사를 막습니다.
+    if any(source in publisher for source in PRESS_RELEASE_PUBLISHERS):
+        return has_market_keyword or has_listed_market_signal
+    return has_market_keyword or has_listed_market_signal
 
 
 def _fallback_summary(title: str, publisher: str, tickers: list[str]) -> dict[str, Any]:
@@ -150,7 +170,7 @@ def _parse_korean_brief(raw_text: str, fallback: dict[str, Any]) -> dict[str, An
 
 
 def summarize_news(title: str, publisher: str, tickers: list[str]) -> dict[str, Any]:
-    """Yahoo 메타데이터를 Gemini 우선, Groq 보조 순서로 한국어 브리핑합니다."""
+    """Yahoo 금융 뉴스 메타데이터를 Gemini 우선으로 한국어 브리핑합니다."""
     fallback = _fallback_summary(title, publisher, tickers)
     related_tickers = ", ".join(tickers[:6]) if tickers else "없음"
     prompt = f"""
@@ -187,23 +207,6 @@ def summarize_news(title: str, publisher: str, tickers: list[str]) -> dict[str, 
                 return result
         except Exception as exc:
             print(f"⚠️ Gemini 뉴스 요약 실패: {type(exc).__name__}")
-
-    groq_client = _get_groq_client()
-    if groq_client is not None:
-        try:
-            response = groq_client.chat.completions.create(
-                model=os.getenv("GROQ_NEWS_MODEL", "llama-3.1-8b-instant"),
-                messages=[
-                    {"role": "system", "content": "You output valid JSON only."},
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.2,
-                max_tokens=280,
-            )
-            return _parse_korean_brief(response.choices[0].message.content or "", fallback)
-        except Exception as exc:
-            print(f"⚠️ Groq 뉴스 요약 실패: {type(exc).__name__}")
 
     translated_fallback = _mymemory_korean_brief(title, publisher, tickers, fallback)
     if translated_fallback != fallback:
@@ -318,6 +321,7 @@ def fetch_and_save_news() -> dict[str, int]:
     raw_candidates: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
     fetch_failure_count = 0
+    filtered_count = 0
 
     for source in YAHOO_QUERIES:
         try:
@@ -334,6 +338,9 @@ def fetch_and_save_news() -> dict[str, int]:
             if not title or not source_url or source_url in seen_urls:
                 continue
             seen_urls.add(source_url)
+            if not _is_market_relevant_news(entry):
+                filtered_count += 1
+                continue
             raw_candidates.append({"entry": entry, "category": source["category"]})
 
     if not raw_candidates:
@@ -343,6 +350,7 @@ def fetch_and_save_news() -> dict[str, int]:
             "fetch_failure_count": fetch_failure_count,
             "save_failure_count": 0,
             "translated_count": translated_count,
+            "filtered_count": filtered_count,
         }
 
     candidate_urls = [item["entry"]["link"] for item in raw_candidates]
@@ -389,6 +397,7 @@ def fetch_and_save_news() -> dict[str, int]:
             "fetch_failure_count": fetch_failure_count,
             "save_failure_count": 0,
             "translated_count": translated_count,
+            "filtered_count": filtered_count,
         }
 
     saved_count = 0
@@ -413,6 +422,7 @@ def fetch_and_save_news() -> dict[str, int]:
         "fetch_failure_count": fetch_failure_count,
         "save_failure_count": save_failure_count,
         "translated_count": translated_count,
+        "filtered_count": filtered_count,
     }
 
 
