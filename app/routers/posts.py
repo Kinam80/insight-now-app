@@ -6,6 +6,7 @@ from app.core.security import decode_access_token
 from datetime import datetime
 
 router = APIRouter(prefix="/posts", tags=["유료 분석 글"])
+AUTOMATED_PLACEHOLDER_PREFIX = "[일일 시장 브리핑]"
 
 class PostCreate(BaseModel):
     title: str
@@ -44,12 +45,14 @@ def get_posts(authorization: Optional[str] = Header(default=None)):
         result = supabase.table("analysis_posts")\
             .select(f"{base_fields}, created_at")\
             .eq("is_published", True)\
+            .not_.ilike("title", f"{AUTOMATED_PLACEHOLDER_PREFIX}%")\
             .order("created_at", desc=True)\
             .execute()
     except Exception:
         result = supabase.table("analysis_posts")\
             .select(base_fields)\
             .eq("is_published", True)\
+            .not_.ilike("title", f"{AUTOMATED_PLACEHOLDER_PREFIX}%")\
             .order("published_at", desc=True)\
             .execute()
 
@@ -82,6 +85,7 @@ def get_latest_report_feed():
             supabase.table("analysis_posts")
             .select(f"{fields}, created_at")
             .eq("is_published", True)
+            .not_.ilike("title", f"{AUTOMATED_PLACEHOLDER_PREFIX}%")
             .order("created_at", desc=True)
             .limit(60)
             .execute()
@@ -91,6 +95,7 @@ def get_latest_report_feed():
             supabase.table("analysis_posts")
             .select(fields)
             .eq("is_published", True)
+            .not_.ilike("title", f"{AUTOMATED_PLACEHOLDER_PREFIX}%")
             .order("published_at", desc=True)
             .limit(60)
             .execute()

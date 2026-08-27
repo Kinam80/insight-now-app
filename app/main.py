@@ -140,10 +140,10 @@ async def refresh_daily_reports_in_background(force: bool = False):
     _set_automation_status("daily_reports", "running")
     try:
         result = await asyncio.to_thread(generate_and_upload_report, force)
-        if result.get("status") == "failed":
-            _set_automation_status("daily_reports", "failed", **result)
-        else:
+        if result.get("status") in {"published", "skipped"}:
             _set_automation_status("daily_reports", "success", **result)
+        else:
+            _set_automation_status("daily_reports", "failed", **result)
         print(f"📝 일일 레포트 자동 갱신: {result}")
     except Exception as exc:
         _set_automation_status("daily_reports", "failed", error_type=type(exc).__name__)

@@ -5,7 +5,12 @@ on:
     - cron: '0 23 * * *'
     - cron: '0 3 * * *'
     - cron: '0 6 * * *'
-  workflow_dispatch: 
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'app/services/report_generator.py'
+      - '.github/workflows/daily_report.yml'
 
 jobs:
   build:
@@ -30,5 +35,6 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FORCE_REPORT: "true"
         run: |
           python app/services/report_generator.py
