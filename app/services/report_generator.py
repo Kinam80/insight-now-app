@@ -203,8 +203,6 @@ def _ai_report(
 ) -> dict[str, str] | None:
     """기존 레포트 흐름을 이어받는 정교한 Gemini 분석을 생성합니다."""
     client = _gemini_client()
-    if client is None:
-        return None
 
     previous_content = str((previous or {}).get("content") or "이전 분석 레포트가 없습니다.")
     previous_title = str((previous or {}).get("title") or "이전 레포트 없음")
