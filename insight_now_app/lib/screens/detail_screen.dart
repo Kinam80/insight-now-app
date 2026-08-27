@@ -184,30 +184,56 @@ class _DetailScreenState extends State<DetailScreen> {
                         const SizedBox(height: 10),
                         MarkdownBody(
                           data: description,
-                          styleSheet: MarkdownStyleSheet(
-                            p: const TextStyle(
-                              fontSize: 16,
-                              color: Colors.white,
-                            ),
-                            h1: const TextStyle(
-                              fontSize: 20,
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          styleSheet: _darkMarkdownStyleSheet(),
                         ),
                       ],
                     )
                   else
                     MarkdownBody(
                       data: data['content'] ?? '내용이 준비되지 않았습니다.',
-                      styleSheet: MarkdownStyleSheet(
-                        p: const TextStyle(fontSize: 16, color: Colors.white),
-                      ),
+                      styleSheet: _darkMarkdownStyleSheet(),
                     ),
                 ],
               ),
       ),
+    );
+  }
+
+  MarkdownStyleSheet _darkMarkdownStyleSheet() {
+    const body = TextStyle(fontSize: 16, height: 1.65, color: Colors.white);
+    return MarkdownStyleSheet(
+      p: body,
+      h1: const TextStyle(
+        fontSize: 23,
+        height: 1.35,
+        color: Color(0xFFFFD166),
+        fontWeight: FontWeight.w800,
+      ),
+      h2: const TextStyle(
+        fontSize: 20,
+        height: 1.4,
+        color: Color(0xFF7DECE2),
+        fontWeight: FontWeight.w800,
+      ),
+      h3: const TextStyle(
+        fontSize: 18,
+        height: 1.45,
+        color: Colors.white,
+        fontWeight: FontWeight.w700,
+      ),
+      h4: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+      h5: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+      h6: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w700),
+      strong: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+      em: const TextStyle(color: Color(0xFFB8C7DB)),
+      listBullet: const TextStyle(color: Color(0xFFFFD166)),
+      blockquote: const TextStyle(color: Color(0xFFB8C7DB), height: 1.6),
+      tableHead: const TextStyle(
+        color: Color(0xFFFFD166),
+        fontWeight: FontWeight.w800,
+      ),
+      tableBody: const TextStyle(color: Colors.white),
+      tableBorder: TableBorder.all(color: const Color(0xFF6E819C)),
     );
   }
 
