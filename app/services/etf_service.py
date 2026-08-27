@@ -336,9 +336,10 @@ def _save_by_ticker(table_name: str, payload: dict[str, Any]) -> Any:
     ticker = str(payload["ticker"]).upper()
     existing = (
         supabase.table(table_name)
-        .select("id, updated_at")
+        # etf_registry에는 updated_at 열이 없는 기존 환경도 있어 두 테이블 공통인 created_at을 기준으로 선택합니다.
+        .select("id")
         .eq("ticker", ticker)
-        .order("updated_at", desc=True)
+        .order("created_at", desc=True)
         .limit(1)
         .execute()
     )
