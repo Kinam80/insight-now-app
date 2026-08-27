@@ -40,6 +40,34 @@ CORE_US_ETF_TICKERS = (
     "XLE", "XLV", "GLD", "SLV", "TLT", "IEF", "HYG", "LQD", "EEM", "ARKK",
     "SCHD", "JEPI",
 )
+# 대표 ETF의 장기적으로 고정된 추종 대상은 한국어로 직접 안내해, 영문 정식명만으로
+# 상품 성격을 추측해야 하는 문제를 없앱니다. 가격·보수·NAV 등 변동 데이터는 원본에서 갱신합니다.
+CORE_ETF_KO_EXPLANATIONS = {
+    "SPY": "미국 S&P 500 지수에 편입된 대형주 전반의 성과를 추종하는 대표 시장지수 ETF입니다.",
+    "IVV": "미국 S&P 500 지수에 편입된 대형주 전반의 성과를 추종하는 대표 시장지수 ETF입니다.",
+    "VOO": "미국 S&P 500 지수에 편입된 대형주 전반의 성과를 추종하는 대표 시장지수 ETF입니다.",
+    "QQQ": "나스닥100 지수의 대형 비금융 성장주·기술주 비중을 중심으로 추종하는 ETF입니다.",
+    "DIA": "다우존스 산업평균지수 구성 대형 우량주 30개 안팎의 성과를 추종하는 ETF입니다.",
+    "IWM": "러셀 2000 지수에 속한 미국 중소형주 전반의 성과를 추종하는 ETF입니다.",
+    "SOXX": "미국 반도체 설계·제조·장비 산업 관련 기업의 성과를 추종하는 섹터 ETF입니다.",
+    "SMH": "글로벌 반도체 산업 관련 기업의 성과를 추종하는 섹터 ETF입니다.",
+    "XLK": "미국 정보기술 섹터 기업의 성과를 추종하는 섹터 ETF입니다.",
+    "XLF": "미국 금융 섹터 기업의 성과를 추종하는 섹터 ETF입니다.",
+    "XLE": "미국 에너지 섹터 기업의 성과를 추종하는 섹터 ETF입니다.",
+    "XLV": "미국 헬스케어 섹터 기업의 성과를 추종하는 섹터 ETF입니다.",
+    "GLD": "금 가격 변동을 반영하도록 설계된 금 현물 연계 ETF입니다.",
+    "SLV": "은 가격 변동을 반영하도록 설계된 은 현물 연계 ETF입니다.",
+    "TLT": "미국 장기 국채 가격과 금리 변동에 노출되는 장기 국채 ETF입니다.",
+    "IEF": "미국 중기 국채 가격과 금리 변동에 노출되는 중기 국채 ETF입니다.",
+    "HYG": "미국 하이일드 회사채 시장에 분산 투자하는 채권 ETF입니다.",
+    "LQD": "미국 투자등급 회사채 시장에 분산 투자하는 채권 ETF입니다.",
+    "EEM": "신흥국 주식시장에 분산 투자하는 국가·신흥시장형 ETF입니다.",
+    "ARKK": "혁신 기술 테마 기업을 중심으로 운용되는 액티브 주식형 ETF입니다.",
+    "SCHD": "미국 배당주 가운데 재무·배당 기준을 적용한 종목군에 분산 투자하는 ETF입니다.",
+    "JEPI": "미국 대형주 투자와 옵션 프리미엄 전략을 결합해 인컴을 추구하는 ETF입니다.",
+    "069500": "KOSPI 200 지수에 편입된 국내 대표 대형주 전반의 성과를 추종하는 ETF입니다.",
+    "360750": "미국 S&P 500 지수에 편입된 대형주 전반의 성과를 원화로 거래할 수 있도록 구성한 국내 상장 ETF입니다.",
+}
 
 CATEGORY_KO = {
     "large blend": "미국 대형주 혼합형",
@@ -181,6 +209,7 @@ def _category_label(category: str | None, name: str) -> str:
     name_lower = name.lower()
     theme_map = [
         (("semiconductor", "chip"), "반도체·AI 인프라형"),
+        (("health", "biotech", "medical", "life sci"), "헬스케어·바이오형"),
         (("s&p 500", "s&p500", "large cap"), "미국 대형주 시장 대표지수형"),
         (("nasdaq", "qqq"), "미국 나스닥·성장주형"),
         (("russell", "small cap", "smallcap"), "미국 중소형주형"),
@@ -189,7 +218,6 @@ def _category_label(category: str | None, name: str) -> str:
         (("energy", "oil", "gas", "uranium", "mlp"), "에너지·인프라형"),
         (("treasury", "bond", "income", "fixed"), "채권·인컴형"),
         (("bank", "financial"), "금융 섹터형"),
-        (("health", "biotech", "medical", "life sci"), "헬스케어·바이오형"),
         (("real estate", "reit", "property"), "부동산·리츠형"),
         (("china", "korea", "india", "japan", "emerging"), "국가·신흥시장형"),
         (("dividend", "quality", "value"), "배당·퀄리티·가치형"),
@@ -198,8 +226,10 @@ def _category_label(category: str | None, name: str) -> str:
     return next((label for words, label in theme_map if any(word in name_lower for word in words)), "주식시장 분산투자형")
 
 
-def _strategy_sentence(raw_summary: str | None, category: str, name: str) -> str:
+def _strategy_sentence(ticker: str, raw_summary: str | None, category: str, name: str) -> str:
     """영문 원문을 노출하지 않고 실제 상품명·분류·공개 설명의 핵심 패턴만 한국어로 안내합니다."""
+    if ticker in CORE_ETF_KO_EXPLANATIONS:
+        return CORE_ETF_KO_EXPLANATIONS[ticker]
     text = (raw_summary or "").lower()
     if "weight" in text and "index" in text:
         return "공개 설명상 기초지수 편입 자산을 지수 비중에 가깝게 보유하도록 설계된 상품입니다."
@@ -310,7 +340,7 @@ def _korean_etf_description(ticker: str, name: str, metadata: dict[str, Any]) ->
 
 **공식 상품명:** {name}
 
-**한줄 설명:** {name}은(는) {category}에 속하는 ETF입니다. {_strategy_sentence(raw_summary, category, name)}
+**한줄 설명:** {name}은(는) {category}에 속하는 ETF입니다. {_strategy_sentence(ticker, raw_summary, category, name)}
 
 ### 이 ETF는 어떤 상품인가요?
 이 상품은 위의 운용사·분류·거래소·비용 데이터를 기준으로 자동 정리되었습니다. 추종지수가 공개된 경우에는 해당 지수의 구성 종목과 비중을, 공개되지 않은 경우에는 운용사의 최신 투자설명서를 함께 확인해야 합니다.
