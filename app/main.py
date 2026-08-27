@@ -33,6 +33,7 @@ from app.services.gov_report_service import (
 # 내부 모듈 임포트
 from app.routers import auth, news, posts, payments, admin, chat
 from app.news_service import fetch_and_save_news
+from app.services.report_generator import generate_and_upload_report
 
 load_dotenv()
 
@@ -83,6 +84,7 @@ market_data_cache = {"data": [], "last_updated": 0}
 automation_scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
 automation_status: dict[str, dict[str, Any]] = {
     "news": {"state": "not_started"},
+    "daily_reports": {"state": "not_started"},
     "etfs": {"state": "not_started"},
     "government_reports": {"state": "not_started"},
 }
@@ -131,6 +133,21 @@ async def refresh_news_in_background():
     except Exception as exc:
         _set_automation_status("news", "failed", error_type=type(exc).__name__)
         print(f"⚠️ 뉴스 수집 작업 실패: {exc}")
+
+
+async def refresh_daily_reports_in_background(force: bool = False):
+    """일일 레포트를 서버 내 스케줄러에서도 발행해 외부 예약 실행 실패를 보완합니다."""
+    _set_automation_status("daily_reports", "running")
+    try:
+        result = await asyncio.to_thread(generate_and_upload_report, force)
+        if result.get("status") == "failed":
+            _set_automation_status("daily_reports", "failed", **result)
+        else:
+            _set_automation_status("daily_reports", "success", **result)
+        print(f"📝 일일 레포트 자동 갱신: {result}")
+    except Exception as exc:
+        _set_automation_status("daily_reports", "failed", error_type=type(exc).__name__)
+        print(f"⚠️ 일일 레포트 자동 갱신 실패: {type(exc).__name__}")
 
 
 async def refresh_etfs_in_background():
@@ -345,6 +362,16 @@ async def startup_event():
             coalesce=True,
         )
         automation_scheduler.add_job(
+            refresh_daily_reports_in_background,
+            trigger="cron",
+            hour="8,12,15",
+            minute=5,
+            id="refresh_daily_reports",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+        automation_scheduler.add_job(
             refresh_etfs_in_background,
             trigger="interval",
             hours=6,
@@ -364,6 +391,7 @@ async def startup_event():
         )
         automation_scheduler.start()
     asyncio.create_task(refresh_news_in_background())
+    asyncio.create_task(refresh_daily_reports_in_background())
     asyncio.create_task(refresh_etfs_in_background())
     asyncio.create_task(refresh_gov_reports_in_background())
     

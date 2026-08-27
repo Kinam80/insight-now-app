@@ -185,11 +185,12 @@ def get_automation_status(_: dict = Depends(require_admin)):
 
 @router.post("/automation/{job_name}/run")
 async def run_automation_job(
-    job_name: Literal["news", "etfs", "government_reports"],
+    job_name: Literal["news", "daily_reports", "etfs", "government_reports"],
     background_tasks: BackgroundTasks,
     _: dict = Depends(require_admin),
 ):
     from app.main import (
+        refresh_daily_reports_in_background,
         refresh_etfs_in_background,
         refresh_gov_reports_in_background,
         refresh_news_in_background,
@@ -197,6 +198,7 @@ async def run_automation_job(
 
     task_map = {
         "news": refresh_news_in_background,
+        "daily_reports": refresh_daily_reports_in_background,
         "etfs": refresh_etfs_in_background,
         "government_reports": refresh_gov_reports_in_background,
     }
