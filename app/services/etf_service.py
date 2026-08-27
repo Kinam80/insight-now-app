@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any
 
@@ -13,6 +14,7 @@ YAHOO_ETF_SCREENER_URLS = (
     "https://query2.finance.yahoo.com/v1/finance/screener/predefined/saved",
 )
 NAVER_ETF_LIST_URL = "https://finance.naver.com/api/sise/etfItemList.nhn"
+YAHOO_SEARCH_URL = "https://query1.finance.yahoo.com/v1/finance/search"
 KRX_CATEGORY_BY_TAB = {
     1: "국내 주식형",
     2: "국내 섹터·테마형",
@@ -482,6 +484,52 @@ def get_all_registered_tickers() -> list[str]:
         return []
 
 
+def lookup_yahoo_etf_names(tickers: list[str]) -> dict[str, dict[str, Any]]:
+    """상위 유니버스 밖 ETF에도 Yahoo 공개 검색의 실제 정식 상품명·거래소를 보강합니다."""
+    normalized = list(dict.fromkeys(ticker.strip().upper() for ticker in tickers if ticker))
+
+    def lookup(ticker: str) -> tuple[str, dict[str, Any] | None]:
+        try:
+            response = requests.get(
+                YAHOO_SEARCH_URL,
+                params={"q": ticker, "quotesCount": 6, "newsCount": 0},
+                headers=REQUEST_HEADERS,
+                timeout=12,
+            )
+            response.raise_for_status()
+            quotes = response.json().get("quotes", [])
+            result = next(
+                (
+                    quote
+                    for quote in quotes
+                    if str(quote.get("symbol", "")).upper() == ticker
+                    and quote.get("quoteType") == "ETF"
+                ),
+                None,
+            )
+            if not result:
+                return ticker, None
+            return ticker, {
+                "longName": result.get("longname") or result.get("shortname"),
+                "shortName": result.get("shortname") or result.get("longname"),
+                "fullExchangeName": result.get("exchDisp") or result.get("exchange"),
+                "exchange": result.get("exchange"),
+                "_source": "Yahoo Finance 공개 ETF 검색",
+            }
+        except Exception:
+            return ticker, None
+
+    found: dict[str, dict[str, Any]] = {}
+    # 공개 검색 원본을 과도하게 호출하지 않도록 최대 8개 요청만 병렬 실행합니다.
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(lookup, ticker) for ticker in normalized]
+        for future in as_completed(futures):
+            ticker, result = future.result()
+            if result and result.get("longName"):
+                found[ticker] = result
+    return found
+
+
 def batch_latest_prices(tickers: list[str]) -> dict[str, float]:
     """등록 ETF의 종가를 최대 75개씩 묶어 가져와 개별 Yahoo 요청의 지연·제한을 피합니다."""
     normalized = list(dict.fromkeys(ticker.strip().upper() for ticker in tickers if ticker))
@@ -553,18 +601,28 @@ def refresh_etf_universe(limit: int = 100) -> dict[str, Any]:
     active_tickers = list(dict.fromkeys([*quote_by_ticker.keys(), *registered_tickers]))
     legacy_tickers = [ticker for ticker in registered_tickers if ticker not in quote_by_ticker]
     legacy_prices = batch_latest_prices(legacy_tickers)
+    existing_by_ticker = {ticker: _latest_data_row(ticker) or {} for ticker in legacy_prices}
+    name_lookup_targets = [
+        ticker
+        for ticker, existing in existing_by_ticker.items()
+        if not existing.get("name") or str(existing.get("name", "")).upper() == ticker
+    ]
+    legacy_names = lookup_yahoo_etf_names(name_lookup_targets)
     for ticker, price in legacy_prices.items():
-        existing = _latest_data_row(ticker) or {}
+        existing = existing_by_ticker[ticker]
         metadata = existing.get("holdings_json") if isinstance(existing.get("holdings_json"), dict) else {}
+        searched = legacy_names.get(ticker, {})
         quote_by_ticker[ticker] = {
             "symbol": ticker,
             "quoteType": "ETF",
-            "longName": existing.get("name") or metadata.get("official_name") or ticker,
+            "longName": searched.get("longName") or existing.get("name") or metadata.get("official_name") or ticker,
+            "shortName": searched.get("shortName"),
             "regularMarketPrice": price,
             "currency": metadata.get("currency"),
-            "fullExchangeName": metadata.get("exchange"),
+            "fullExchangeName": searched.get("fullExchangeName") or metadata.get("exchange"),
+            "exchange": searched.get("exchange"),
             "_market": metadata.get("market"),
-            "_source": "Yahoo Finance 일괄 시세 갱신",
+            "_source": searched.get("_source") or "Yahoo Finance 일괄 시세 갱신",
         }
 
     price_updated = 0
@@ -588,6 +646,7 @@ def refresh_etf_universe(limit: int = 100) -> dict[str, Any]:
         "description_enriched": description_enriched,
         "registry_failure_count": registry_failures,
         "legacy_price_updated": len(legacy_prices),
+        "legacy_name_enriched": len(legacy_names),
         "failure_count": len(failures),
         "failures": failures[:10],
         "source_failure_count": len(source_errors),
