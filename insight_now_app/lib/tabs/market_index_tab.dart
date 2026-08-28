@@ -232,7 +232,8 @@ class _MarketIndexTabState extends State<MarketIndexTab>
     final maxScroll = controller.position.maxScrollExtent;
     final currentScroll = controller.offset;
     if (maxScroll <= 0) return;
-    controller.jumpTo(currentScroll >= maxScroll ? 0 : currentScroll + 0.75);
+      // 카드가 화면 가장자리에서 과도하게 잘려 보이지 않도록 천천히 이동합니다.
+      controller.jumpTo(currentScroll >= maxScroll ? 0 : currentScroll + 0.28);
   }
 
   void _pauseTicker(String name) {
@@ -286,6 +287,7 @@ class _MarketIndexTabState extends State<MarketIndexTab>
                     controller: controller,
                     scrollDirection: Axis.horizontal,
                     physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
                     itemBuilder: (context, index) => _buildMarketCard(
                       items[index % items.length],
                       compact: true,
@@ -774,8 +776,8 @@ class _MarketIndexTabState extends State<MarketIndexTab>
         duration: const Duration(milliseconds: 140),
         scale: selected ? 1.08 : 1,
         child: Container(
-          width: compact ? 118 : 140,
-          margin: EdgeInsets.only(right: compact ? 8 : 15),
+          width: compact ? 128 : 140,
+          margin: EdgeInsets.only(right: compact ? 7 : 15),
           padding: EdgeInsets.symmetric(horizontal: compact ? 9 : 12, vertical: compact ? 6 : 12),
           decoration: BoxDecoration(
             color: selected ? cardColor.withValues(alpha: 1) : cardColor,
