@@ -2,13 +2,11 @@ name: Daily Report Automation
 
 on:
   schedule:
-    # GitHub Actions 일정은 UTC 기준입니다. 각 정시와 10분 후 백업을 함께 둡니다.
-    - cron: '0 23 * * *'
-    - cron: '10 23 * * *'
-    - cron: '0 3 * * *'
-    - cron: '10 3 * * *'
-    - cron: '0 6 * * *'
-    - cron: '10 6 * * *'
+    # GitHub Actions는 정각에 지연될 수 있어, KST 정시 뒤 7분·17분에 백업 실행합니다.
+    # Render 주 스케줄은 08:05·12:05·15:05, 아래 백업은 08:07/17·12:07/17·15:07/17 KST입니다.
+    - cron: '7,17 23 * * *'
+    - cron: '7,17 3 * * *'
+    - cron: '7,17 6 * * *'
   workflow_dispatch:
     inputs:
       edition:
@@ -47,9 +45,9 @@ jobs:
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             edition="$MANUAL_EDITION"
-          elif [ "$SCHEDULE" = "0 23 * * *" ] || [ "$SCHEDULE" = "10 23 * * *" ]; then
+          elif [ "$SCHEDULE" = "7,17 23 * * *" ]; then
             edition="pre_open"
-          elif [ "$SCHEDULE" = "0 3 * * *" ] || [ "$SCHEDULE" = "10 3 * * *" ]; then
+          elif [ "$SCHEDULE" = "7,17 3 * * *" ]; then
             edition="intraday"
           else
             edition="closing_next_day"
