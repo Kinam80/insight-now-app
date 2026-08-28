@@ -1,4 +1,7 @@
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/market_index.dart';
@@ -34,7 +37,25 @@ class ApiService {
     return [];
   }
 
+    // 대표 코인 가격은 서버가 Yahoo Finance에서 자동 갱신합니다.
+  static Future<List<MarketIndex>> fetchMarketCrypto() async {
+    try {
+      final response = await http.get(
+        Uri.parse(ApiConstants.marketCryptoEndpoint),
+        headers: await _getHeaders(),
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> body = json.decode(utf8.decode(response.bodyBytes));
+        return body.map((dynamic item) => MarketIndex.fromJson(item)).toList();
+      }
+    } catch (e) {
+      debugPrint('대표 코인 데이터 호출 오류: $e');
+    }
+    return [];
+  }
+
   // 2. 홈 화면의 공개 일일 레포트를 가져오는 함수
+
   static Future<List<dynamic>> fetchDailyReports() async {
     try {
       final response = await http.get(

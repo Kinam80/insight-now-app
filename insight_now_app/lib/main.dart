@@ -3,8 +3,8 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart'; // 1. 필수 추가
-import 'navigation.dart';
 import 'auth_provider.dart';
+import 'services/background_music_controller.dart';
 
 // Supabase 접속 정보
 const String supabaseUrl = 'https://ckzaqaxhzbqydiwrbkas.supabase.co';
@@ -20,7 +20,13 @@ void main() async {
   await MobileAds.instance.initialize();
 
   runApp(
-    ChangeNotifierProvider(create: (_) => AuthProvider(), child: const MyApp()),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => BackgroundMusicController()),
+      ],
+      child: const MyApp(),
+    ),
   );
 }
 

@@ -81,6 +81,7 @@ class EtfRegistration(BaseModel):
 
 # --- 시장 데이터 캐시 ---
 market_data_cache = {"data": [], "last_updated": 0}
+crypto_data_cache = {"data": [], "last_updated": 0}
 automation_scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
 automation_status: dict[str, dict[str, Any]] = {
     "news": {"state": "not_started"},
@@ -253,6 +254,38 @@ def fetch_market_data():
     except: pass
     return results
 
+
+def fetch_crypto_data():
+    """대표 가상자산의 검증 가능한 달러 기준 가격과 전일 대비 등락을 수집합니다."""
+    tickers = {
+        "비트코인": ("BTC-USD", "₿"),
+        "이더리움": ("ETH-USD", "Ξ"),
+        "솔라나": ("SOL-USD", "◎"),
+    }
+    results = []
+    for name, (symbol, marker) in tickers.items():
+        try:
+            data = yf.Ticker(symbol).history(period="5d", auto_adjust=False)
+            if data.empty or len(data) < 2:
+                continue
+            current = float(data["Close"].iloc[-1])
+            previous = float(data["Close"].iloc[-2])
+            if math.isnan(current) or math.isnan(previous) or previous == 0:
+                continue
+            change_pct = ((current - previous) / previous) * 100
+            precision = 0 if current >= 1000 else 2
+            results.append({
+                "name": name,
+                "value": f"${current:,.{precision}f}",
+                "change": f"{change_pct:+.2f}%",
+                "isUp": change_pct >= 0,
+                "nation": marker,
+            })
+        except Exception:
+            continue
+    return results
+
+
 @app.get("/api/automation/status")
 async def get_automation_status():
     """자동 수집 작업의 최근 상태를 비밀정보 없이 반환합니다."""
@@ -261,11 +294,18 @@ async def get_automation_status():
 
 @app.get("/api/market/indices")
 async def get_market_indices():
-
     if time.time() - market_data_cache["last_updated"] > 60 or not market_data_cache["data"]:
         market_data_cache["data"] = fetch_market_data()
         market_data_cache["last_updated"] = time.time()
     return market_data_cache["data"]
+
+
+@app.get("/api/market/crypto")
+async def get_market_crypto():
+    if time.time() - crypto_data_cache["last_updated"] > 60 or not crypto_data_cache["data"]:
+        crypto_data_cache["data"] = fetch_crypto_data()
+        crypto_data_cache["last_updated"] = time.time()
+    return crypto_data_cache["data"]
 
 # --- ETF 관리 API (등록 및 업데이트) ---
 
@@ -453,6 +493,10 @@ async def background_init():
         if data:
             market_data_cache["data"] = data
             market_data_cache["last_updated"] = time.time()
+        crypto = await asyncio.to_thread(fetch_crypto_data)
+        if crypto:
+            crypto_data_cache["data"] = crypto
+            crypto_data_cache["last_updated"] = time.time()
         print("✅ 초기 데이터 로드 완료")
     except Exception as e:
         print(f"⚠️ 초기화 중 경고: {e}")

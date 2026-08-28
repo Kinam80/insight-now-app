@@ -44,6 +44,7 @@ dependencies:
   flutter_markdown: ^0.7.7+1
   google_mobile_ads: ^9.1.0
   web_socket_channel: ^3.0.3
+  audioplayers: ^6.8.1
 
 dev_dependencies:
   flutter_test:
@@ -70,6 +71,7 @@ flutter:
   assets:
     - assets/images/login_finance_taegeuk.png
     - assets/images/market_hero.png
+    - assets/audio/insight_now_classical_ambience.mp3
 
   # To add assets to your application, add an assets section, like this:
   # assets:

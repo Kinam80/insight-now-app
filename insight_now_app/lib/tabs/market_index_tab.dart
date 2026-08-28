@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../constants/ad_config.dart';
 import '../models/market_index.dart';
 import '../screens/detail_screen.dart';
 import '../services/ad_service.dart';
 import '../services/api_service.dart';
+import '../services/background_music_controller.dart';
 
 const Color backgroundColor = Color(0xFF0A192F);
 const Color cardColor = Color(0xFF172A45);
@@ -80,38 +82,49 @@ class _MarketIndexTabState extends State<MarketIndexTab>
   ];
 
   late Future<List<MarketIndex>> _marketData;
+  late Future<List<MarketIndex>> _cryptoData;
   late Future<List<dynamic>> _postsData;
   late TabController _tabController;
   late final AdService _adService;
 
   final ScrollController _scrollController = ScrollController();
+  final ScrollController _cryptoScrollController = ScrollController();
   Timer? _timer;
+  Timer? _marketRefreshTimer;
+  String? _selectedTicker;
+  bool _tickerPaused = false;
 
   @override
   void initState() {
     super.initState();
     _marketData = ApiService.fetchMarketIndices();
+    _cryptoData = ApiService.fetchMarketCrypto();
     _postsData = ApiService.fetchDailyReports();
     _tabController = TabController(length: 2, vsync: this);
     _adService = AdService();
     _adService.loadInterstitialAd(AdConfig.interstitialAdUnitId);
 
     _timer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
-      if (!_scrollController.hasClients) return;
-      final maxScroll = _scrollController.position.maxScrollExtent;
-      final currentScroll = _scrollController.offset;
-      if (maxScroll <= 0) return;
-      _scrollController.jumpTo(
-        currentScroll >= maxScroll ? 0 : currentScroll + 1.0,
-      );
+      if (_tickerPaused) return;
+      _advanceTicker(_scrollController);
+      _advanceTicker(_cryptoScrollController);
+    });
+    _marketRefreshTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        _marketData = ApiService.fetchMarketIndices();
+        _cryptoData = ApiService.fetchMarketCrypto();
+      });
     });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _marketRefreshTimer?.cancel();
     _adService.dispose();
     _scrollController.dispose();
+    _cryptoScrollController.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -167,40 +180,21 @@ class _MarketIndexTabState extends State<MarketIndexTab>
               padding: const EdgeInsets.only(top: 18),
               child: Column(
                 children: [
-                  SizedBox(
-                    height: 112,
-                    child: FutureBuilder<List<MarketIndex>>(
-                      future: _marketData,
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Center(
-                            child: CircularProgressIndicator(color: goldAccent),
-                          );
-                        }
-                        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                          return const Center(
-                            child: Text(
-                              '지수 데이터를 불러오는 중입니다.',
-                              style: TextStyle(color: Colors.white70),
-                            ),
-                          );
-                        }
-                        return ListView.builder(
-                          controller: _scrollController,
-                          scrollDirection: Axis.horizontal,
-                          physics: const BouncingScrollPhysics(),
-                          itemBuilder: (context, index) {
-                            final items = snapshot.data!;
-                            return _buildMarketCard(
-                              items[index % items.length],
-                            );
-                          },
-                        );
-                      },
-                    ),
+                  _buildTickerStrip(
+                    title: '주요 지수',
+                    future: _marketData,
+                    controller: _scrollController,
+                    emptyText: '지수 데이터를 불러오는 중입니다.',
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 6),
+                  _buildTickerStrip(
+                    title: '대표 코인',
+                    future: _cryptoData,
+                    controller: _cryptoScrollController,
+                    emptyText: '대표 코인 데이터를 불러오는 중입니다.',
+                    accent: mintAccent,
+                  ),
+                  const SizedBox(height: 12),
                   _buildInsightHeader(),
                   const SizedBox(height: 10),
                   TabBar(
@@ -233,6 +227,80 @@ class _MarketIndexTabState extends State<MarketIndexTab>
     );
   }
 
+  void _advanceTicker(ScrollController controller) {
+    if (!controller.hasClients) return;
+    final maxScroll = controller.position.maxScrollExtent;
+    final currentScroll = controller.offset;
+    if (maxScroll <= 0) return;
+    controller.jumpTo(currentScroll >= maxScroll ? 0 : currentScroll + 0.75);
+  }
+
+  void _pauseTicker(String name) {
+    if (!mounted) return;
+    setState(() {
+      _tickerPaused = true;
+      _selectedTicker = name;
+    });
+  }
+
+  void _resumeTicker() {
+    if (!mounted) return;
+    setState(() {
+      _tickerPaused = false;
+      _selectedTicker = null;
+    });
+  }
+
+  Widget _buildTickerStrip({
+    required String title,
+    required Future<List<MarketIndex>> future,
+    required ScrollController controller,
+    required String emptyText,
+    Color accent = goldAccent,
+  }) {
+    return SizedBox(
+      height: 58,
+      child: FutureBuilder<List<MarketIndex>>(
+        future: future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator(color: goldAccent, strokeWidth: 2));
+          }
+          final items = snapshot.data ?? const <MarketIndex>[];
+          if (items.isEmpty) {
+            return Center(child: Text(emptyText, style: const TextStyle(color: Colors.white70, fontSize: 12)));
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(title, style: TextStyle(color: accent.withValues(alpha: 0.92), fontSize: 10, fontWeight: FontWeight.w800)),
+              ),
+              const SizedBox(height: 3),
+              Expanded(
+                child: Listener(
+                  onPointerUp: (_) => _resumeTicker(),
+                  onPointerCancel: (_) => _resumeTicker(),
+                  child: ListView.builder(
+                    controller: controller,
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    itemBuilder: (context, index) => _buildMarketCard(
+                      items[index % items.length],
+                      compact: true,
+                      accent: accent,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildInsightHeader() {
     return Container(
       width: double.infinity,
@@ -245,11 +313,11 @@ class _MarketIndexTabState extends State<MarketIndexTab>
           color: const Color(0xFF7DD3FC).withValues(alpha: 0.30),
         ),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.auto_graph_rounded, color: mintAccent),
-          SizedBox(width: 10),
-          Expanded(
+          const Icon(Icons.auto_graph_rounded, color: mintAccent),
+          const SizedBox(width: 10),
+          const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -267,6 +335,16 @@ class _MarketIndexTabState extends State<MarketIndexTab>
                   style: TextStyle(fontSize: 12, color: Colors.white60),
                 ),
               ],
+            ),
+          ),
+          Consumer<BackgroundMusicController>(
+            builder: (context, music, _) => IconButton(
+              tooltip: music.enabled ? '배경음 끄기' : '배경음 켜기',
+              onPressed: music.ready ? music.toggle : null,
+              icon: Icon(
+                music.enabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+                color: music.enabled ? goldAccent : Colors.white54,
+              ),
             ),
           ),
         ],
@@ -681,46 +759,61 @@ class _MarketIndexTabState extends State<MarketIndexTab>
         DateTime(1970);
   }
 
-  Widget _buildMarketCard(MarketIndex item) {
-    return Container(
-      width: 140,
-      margin: const EdgeInsets.only(right: 15),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: goldAccent.withValues(alpha: 0.30)),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            item.nation,
-            style: const TextStyle(fontSize: 10, color: Colors.white54),
+  Widget _buildMarketCard(
+    MarketIndex item, {
+    bool compact = false,
+    Color accent = goldAccent,
+  }) {
+    final selected = _selectedTicker == item.name;
+    final changeColor = item.isUp ? Colors.redAccent : Colors.blueAccent;
+    return GestureDetector(
+      onTapDown: (_) => _pauseTicker(item.name),
+      onTapUp: (_) => _resumeTicker(),
+      onTapCancel: _resumeTicker,
+      child: AnimatedScale(
+        duration: const Duration(milliseconds: 140),
+        scale: selected ? 1.08 : 1,
+        child: Container(
+          width: compact ? 118 : 140,
+          margin: EdgeInsets.only(right: compact ? 8 : 15),
+          padding: EdgeInsets.symmetric(horizontal: compact ? 9 : 12, vertical: compact ? 6 : 12),
+          decoration: BoxDecoration(
+            color: selected ? cardColor.withValues(alpha: 1) : cardColor,
+            borderRadius: BorderRadius.circular(compact ? 13 : 20),
+            border: Border.all(color: (selected ? accent : goldAccent).withValues(alpha: selected ? 0.82 : 0.30)),
+            boxShadow: selected ? [BoxShadow(color: accent.withValues(alpha: 0.25), blurRadius: 12)] : null,
           ),
-          Text(
-            item.name,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            item.value,
-            style: TextStyle(
-              color: item.isUp ? Colors.redAccent : Colors.blueAccent,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Text(
-            item.change,
-            style: TextStyle(
-              color: item.isUp ? Colors.redAccent : Colors.blueAccent,
-              fontSize: 11,
-            ),
-          ),
-        ],
+          child: compact
+              ? Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Row(
+                      children: [
+                        Text(item.nation, style: const TextStyle(fontSize: 10)),
+                        const SizedBox(width: 4),
+                        Expanded(child: Text(item.name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white, fontSize: 10))),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Expanded(child: Text(item.value, overflow: TextOverflow.ellipsis, style: TextStyle(color: changeColor, fontWeight: FontWeight.w900, fontSize: 11))),
+                        Text(item.change, style: TextStyle(color: changeColor, fontSize: 9, fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                  ],
+                )
+              : Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(item.nation, style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                    Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                    const SizedBox(height: 5),
+                    Text(item.value, style: TextStyle(color: changeColor, fontWeight: FontWeight.bold)),
+                    Text(item.change, style: TextStyle(color: changeColor, fontSize: 11)),
+                  ],
+                ),
+        ),
       ),
     );
   }

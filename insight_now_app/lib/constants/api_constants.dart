@@ -5,8 +5,10 @@ class ApiConstants {
   // --- 🆕 신규 탭용 API ---
   static const String newsEndpoint = '$baseUrl/api/news/';
   static const String etfEndpoint = '$baseUrl/api/etf/list'; // etf/list로 수정
-  static const String marketIndicesEndpoint =
+    static const String marketIndicesEndpoint =
       '$baseUrl/api/market/indices'; // 추가된 항목
+  static const String marketCryptoEndpoint = '$baseUrl/api/market/crypto';
+
   static const String govStatsEndpoint = '$baseUrl/api/gov-stats';
 
   // --- 인증 API ---
