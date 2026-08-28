@@ -104,7 +104,7 @@ class _MarketIndexTabState extends State<MarketIndexTab>
     _adService = AdService();
     _adService.loadInterstitialAd(AdConfig.interstitialAdUnitId);
 
-    _timer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+    _timer = Timer.periodic(const Duration(seconds: 3), (timer) {
       if (_tickerPaused) return;
       _advanceTicker(_scrollController);
       _advanceTicker(_cryptoScrollController);
@@ -232,8 +232,18 @@ class _MarketIndexTabState extends State<MarketIndexTab>
     final maxScroll = controller.position.maxScrollExtent;
     final currentScroll = controller.offset;
     if (maxScroll <= 0) return;
-      // 카드가 화면 가장자리에서 과도하게 잘려 보이지 않도록 천천히 이동합니다.
-      controller.jumpTo(currentScroll >= maxScroll ? 0 : currentScroll + 0.28);
+    // 한 카드씩 부드럽게 이동해 카드 중간에서 캡처되거나 잘려 보이는 현상을 줄입니다.
+    const step = 135.0; // 카드 128 + 간격 7
+    final next = currentScroll + step;
+    if (next >= maxScroll - 16) {
+      controller.jumpTo(16);
+      return;
+    }
+    controller.animateTo(
+      next,
+      duration: const Duration(milliseconds: 650),
+      curve: Curves.easeInOut,
+    );
   }
 
   void _pauseTicker(String name) {
@@ -260,7 +270,8 @@ class _MarketIndexTabState extends State<MarketIndexTab>
     Color accent = goldAccent,
   }) {
     return SizedBox(
-      height: 58,
+      // 이름·가격·등락을 한 카드 안에 충분히 담아 하단 숫자가 잘리지 않게 합니다.
+      height: 70,
       child: FutureBuilder<List<MarketIndex>>(
         future: future,
         builder: (context, snapshot) {
@@ -288,6 +299,7 @@ class _MarketIndexTabState extends State<MarketIndexTab>
                     scrollDirection: Axis.horizontal,
                     physics: const BouncingScrollPhysics(),
                     padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: items.length * 4,
                     itemBuilder: (context, index) => _buildMarketCard(
                       items[index % items.length],
                       compact: true,
