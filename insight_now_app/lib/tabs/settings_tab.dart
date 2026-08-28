@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../auth_provider.dart';
 import '../constants/api_constants.dart';
+import '../services/background_music_controller.dart';
 
 class SettingsTab extends StatefulWidget {
   const SettingsTab({super.key});
@@ -160,6 +161,29 @@ class _SettingsTabState extends State<SettingsTab> {
                         Icons.chevron_right_rounded,
                         color: Color(0xFF8CA8C1),
                       ),
+              ),
+              const SizedBox(height: 22),
+              _sectionTitle('소리 설정'),
+              const SizedBox(height: 8),
+              Consumer<BackgroundMusicController>(
+                builder: (context, music, _) => _buildActionTile(
+                  icon: music.enabled
+                      ? Icons.volume_up_rounded
+                      : Icons.volume_off_rounded,
+                  iconColor: music.enabled
+                      ? const Color(0xFFFFD166)
+                      : const Color(0xFF8CA8C1),
+                  title: '클래식 배경음',
+                  subtitle: music.enabled
+                      ? '잔잔한 클래식 앰비언트가 재생 중입니다.'
+                      : '배경음이 꺼져 있습니다.',
+                  onTap: music.ready ? music.toggle : null,
+                  trailing: Switch.adaptive(
+                    value: music.enabled,
+                    activeTrackColor: const Color(0xFFFFD166),
+                    onChanged: music.ready ? music.setEnabled : null,
+                  ),
+                ),
               ),
               const SizedBox(height: 22),
               _sectionTitle('앱 관리'),
