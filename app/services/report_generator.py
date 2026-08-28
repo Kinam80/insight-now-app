@@ -21,6 +21,23 @@ KST = ZoneInfo("Asia/Seoul")
 DEFAULT_AUTHOR_ID = "8d8aed4f-97da-4cbb-b552-dd07215dbc62"
 REPORT_CATEGORY = "레포트"
 PLACEHOLDER_TITLE_PREFIX = "[일일 시장 브리핑]"
+REPORT_EDITIONS = {
+    "pre_open": {
+        "label": "장시작 전 브리핑",
+        "title_prefix": "[장시작 전]",
+        "instruction": "국내 장 시작 전 확인할 글로벌 야간 흐름, 핵심 일정·리스크, 개장 직후 관찰할 조건을 정리하세요. 장중 수익률이나 마감 결과를 단정하지 마세요.",
+    },
+    "intraday": {
+        "label": "장중 브리핑",
+        "title_prefix": "[장중]",
+        "instruction": "국내 장중 시점에서 오전 흐름과 직전 장시작 전 브리핑을 비교하세요. 제공된 지표로 확인되지 않는 실시간 체결·수급·장중 변동은 만들지 말고, 오후 확인 조건을 제시하세요.",
+    },
+    "closing_next_day": {
+        "label": "장마감·내일장 대비 브리핑",
+        "title_prefix": "[장마감]",
+        "instruction": "장 마감 시점의 확인 가능한 흐름을 정리하고, 다음 거래일 전에 점검할 해외 시장·금리·환율·주요 일정과 리스크를 제시하세요. 제공되지 않은 종가·수급은 사실처럼 단정하지 마세요.",
+    },
+}
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
@@ -119,6 +136,30 @@ def _latest_quality_report(client: Client) -> dict[str, Any] | None:
     return None
 
 
+def _edition_report_exists(
+    client: Client, edition_info: dict[str, str], now: datetime
+) -> bool:
+    """같은 한국 날짜·회차 레포트가 이미 공개됐는지 확인해 백업 실행의 중복 발행을 막습니다."""
+    try:
+        response = (
+            client.table("analysis_posts")
+            .select("title,created_at,published_at")
+            .eq("is_published", True)
+            .eq("category", REPORT_CATEGORY)
+            .ilike("title", f"{edition_info['title_prefix']}%")
+            .order("published_at", desc=True)
+            .limit(8)
+            .execute()
+        )
+    except Exception:
+        return False
+    for item in response.data or []:
+        published = _to_datetime(item.get("published_at") or item.get("created_at"))
+        if published and published.astimezone(KST).date() == now.date():
+            return True
+    return False
+
+
 def _to_datetime(value: Any) -> datetime | None:
     if not value:
         return None
@@ -159,6 +200,17 @@ def _recent_korean_news(client: Client, limit: int = 8) -> list[dict[str, str]]:
     return items
 
 
+def _resolve_report_edition(edition: str | None, now: datetime) -> dict[str, str]:
+    """정시 회차 또는 수동 실행 시각에 맞는 분석 목적을 선택합니다."""
+    if edition in REPORT_EDITIONS:
+        return REPORT_EDITIONS[edition]
+    if now.hour < 11:
+        return REPORT_EDITIONS["pre_open"]
+    if now.hour < 14:
+        return REPORT_EDITIONS["intraday"]
+    return REPORT_EDITIONS["closing_next_day"]
+
+
 def _clean_json(raw: str) -> dict[str, str] | None:
     raw = raw.strip().replace("```json", "").replace("```", "").strip()
     match = re.search(r"\{.*\}", raw, re.DOTALL)
@@ -185,6 +237,7 @@ def _ai_report(
     now: datetime,
     market: list[dict[str, Any]],
     recent_news: list[dict[str, str]],
+    edition: str | None = None,
 ) -> dict[str, str] | None:
     """Gemini만 사용해 기존 레포트 흐름을 이어받는 정교한 분석을 생성합니다."""
     client = _gemini_client()
@@ -201,15 +254,13 @@ def _ai_report(
         f"- [{index + 1}] {item['title']}\n  요약: {item['summary']}\n  수집시각: {item['created_at']}"
         for index, item in enumerate(recent_news)
     ) or "- 최신 뉴스 입력이 부족하므로 확인되지 않은 사건·수치·발언을 만들지 말 것"
-    time_slot_instruction = (
-        "이번 회차는 오후장 레포트입니다. 오늘 오전 레포트 및 직전 레포트와 비교해 흐름의 변화를 구체적으로 설명하세요."
-        if now.hour >= 15
-        else "직전 레포트와 비교해 시장 추세가 지속인지 반전인지 근거와 함께 설명하세요."
-    )
+    edition_info = _resolve_report_edition(edition, now)
+    time_slot_instruction = edition_info["instruction"]
 
     prompt = f"""
 너는 Insight Now의 20년 경력 글로벌 시장 전략가이자 한국어 금융 편집자다.
 오늘 작성 시간은 {now.strftime('%Y-%m-%d %H:%M')} (KST)이다.
+이번 정시 회차는 **{edition_info['label']}**이다. 제목은 반드시 `{edition_info['title_prefix']}`로 시작한다.
 
 [이전 분석 레포트]
 제목: {previous_title}
@@ -287,7 +338,11 @@ def _hide_legacy_placeholder_reports(client: Client) -> int:
         return 0
 
 
-def generate_and_upload_report(force: bool = False, min_interval_hours: int = 3) -> dict[str, Any]:
+def generate_and_upload_report(
+    force: bool = False,
+    min_interval_hours: int = 3,
+    edition: str | None = None,
+) -> dict[str, Any]:
     """Gemini 연속성 레포트를 생성·검증한 뒤 공개 발행합니다.
 
     `force=True`는 정해진 3회 발행이나 장애 복구에서 중복 시간 제한을 넘겨
@@ -297,6 +352,13 @@ def generate_and_upload_report(force: bool = False, min_interval_hours: int = 3)
     now = datetime.now(KST)
     try:
         client = _supabase_client()
+        edition_info = _resolve_report_edition(edition, now)
+        if _edition_report_exists(client, edition_info, now):
+            return {
+                "status": "skipped",
+                "reason": "edition_already_published",
+                "edition": edition_info["label"],
+            }
         previous = _latest_quality_report(client)
         previous_time = _to_datetime(
             (previous or {}).get("created_at") or (previous or {}).get("published_at")
@@ -314,7 +376,7 @@ def generate_and_upload_report(force: bool = False, min_interval_hours: int = 3)
 
         market = _market_snapshot()
         recent_news = _recent_korean_news(client)
-        report = _ai_report(previous, now, market, recent_news)
+        report = _ai_report(previous, now, market, recent_news, edition=edition)
         if report is None:
             return {
                 "status": "deferred",
@@ -322,6 +384,9 @@ def generate_and_upload_report(force: bool = False, min_interval_hours: int = 3)
                 "market_items": len(market),
                 "news_items": len(recent_news),
             }
+        title_prefix = edition_info["title_prefix"]
+        if not report["title"].startswith(title_prefix):
+            report["title"] = f"{title_prefix} {report['title']}"[:120]
 
         data = {
             "title": report["title"],
@@ -341,6 +406,7 @@ def generate_and_upload_report(force: bool = False, min_interval_hours: int = 3)
             "id": created.get("id"),
             "title": data["title"],
             "quality": "gemini_continuity",
+            "edition": edition_info["label"],
             "market_items": len(market),
             "news_items": len(recent_news),
             "hidden_placeholder_reports": hidden_placeholders,
@@ -351,7 +417,10 @@ def generate_and_upload_report(force: bool = False, min_interval_hours: int = 3)
 
 if __name__ == "__main__":
     force_from_env = os.getenv("FORCE_REPORT", "").strip().lower() in {"1", "true", "yes"}
-    result = generate_and_upload_report(force=force_from_env)
+    result = generate_and_upload_report(
+        force=force_from_env,
+        edition=os.getenv("REPORT_EDITION") or None,
+    )
     print(json.dumps(result, ensure_ascii=False))
     if result.get("status") in {"failed", "deferred"}:
         raise SystemExit(1)

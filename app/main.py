@@ -135,11 +135,15 @@ async def refresh_news_in_background():
         print(f"⚠️ 뉴스 수집 작업 실패: {exc}")
 
 
-async def refresh_daily_reports_in_background(force: bool = False):
-    """일일 레포트를 서버 내 스케줄러에서도 발행해 외부 예약 실행 실패를 보완합니다."""
-    _set_automation_status("daily_reports", "running")
+async def refresh_daily_reports_in_background(
+    force: bool = False, edition: str | None = None
+):
+    """정시 회차별 Gemini 레포트를 발행하고 GitHub 백업 실행을 보완합니다."""
+    _set_automation_status("daily_reports", "running", edition=edition)
     try:
-        result = await asyncio.to_thread(generate_and_upload_report, force)
+        result = await asyncio.to_thread(
+            generate_and_upload_report, force, 3, edition
+        )
         if result.get("status") in {"published", "skipped"}:
             _set_automation_status("daily_reports", "success", **result)
         else:
@@ -388,16 +392,23 @@ async def startup_event():
             max_instances=1,
             coalesce=True,
         )
-        automation_scheduler.add_job(
-            refresh_daily_reports_in_background,
-            trigger="cron",
-            hour="8,12,15",
-            minute=5,
-            id="refresh_daily_reports",
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-        )
+        for job_id, hour, edition in (
+            ("refresh_daily_reports_pre_open", 8, "pre_open"),
+            ("refresh_daily_reports_intraday", 12, "intraday"),
+            ("refresh_daily_reports_closing", 15, "closing_next_day"),
+        ):
+            automation_scheduler.add_job(
+                refresh_daily_reports_in_background,
+                trigger="cron",
+                hour=hour,
+                minute=5,
+                id=job_id,
+                kwargs={"force": True, "edition": edition},
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=1800,
+            )
         automation_scheduler.add_job(
             refresh_etfs_in_background,
             trigger="interval",
@@ -418,7 +429,7 @@ async def startup_event():
         )
         automation_scheduler.start()
     asyncio.create_task(refresh_news_in_background())
-    asyncio.create_task(refresh_daily_reports_in_background())
+    # 서버 재시작 시 임의 시각의 레포트가 생기지 않도록 레포트는 위의 3회 정시 작업만 발행합니다.
     asyncio.create_task(refresh_etfs_in_background())
     asyncio.create_task(refresh_gov_reports_in_background())
     

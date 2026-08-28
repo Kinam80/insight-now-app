@@ -2,15 +2,24 @@ name: Daily Report Automation
 
 on:
   schedule:
+    # GitHub Actions 일정은 UTC 기준입니다. 각 정시와 10분 후 백업을 함께 둡니다.
     - cron: '0 23 * * *'
+    - cron: '10 23 * * *'
     - cron: '0 3 * * *'
+    - cron: '10 3 * * *'
     - cron: '0 6 * * *'
+    - cron: '10 6 * * *'
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'app/services/report_generator.py'
-      - '.github/workflows/daily_report.yml'
+    inputs:
+      edition:
+        description: '발행 회차'
+        required: true
+        default: 'pre_open'
+        type: choice
+        options:
+          - pre_open
+          - intraday
+          - closing_next_day
 
 jobs:
   build:
@@ -29,12 +38,31 @@ jobs:
           python -m pip install --upgrade pip
           pip install google-genai supabase python-dotenv yfinance
 
-      - name: Run Report Generator
+      - name: Resolve report edition
+        id: edition
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          MANUAL_EDITION: ${{ inputs.edition }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            edition="$MANUAL_EDITION"
+          elif [ "$SCHEDULE" = "0 23 * * *" ] || [ "$SCHEDULE" = "10 23 * * *" ]; then
+            edition="pre_open"
+          elif [ "$SCHEDULE" = "0 3 * * *" ] || [ "$SCHEDULE" = "10 3 * * *" ]; then
+            edition="intraday"
+          else
+            edition="closing_next_day"
+          fi
+          echo "edition=$edition" >> "$GITHUB_OUTPUT"
+
+      - name: Run Gemini report generator
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           FORCE_REPORT: "true"
+          REPORT_EDITION: ${{ steps.edition.outputs.edition }}
         run: |
           python app/services/report_generator.py
