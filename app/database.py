@@ -12,6 +12,10 @@ SUPABASE_KEY = (
     or os.getenv("SUPABASE_ANON_KEY")
     or os.getenv("SUPABASE_SECRET_KEY")
 )
+# 인증 fallback에서 사용할 공개 키를 명시적으로 노출합니다.
+# 별도의 ANON 키가 있으면 반드시 그것을 우선 사용하고,
+# 구형 배포 환경에서는 기존 SUPABASE_KEY로 호환합니다.
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY") or SUPABASE_KEY
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError(
