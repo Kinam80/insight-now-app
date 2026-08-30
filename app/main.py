@@ -9,6 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 import yfinance as yf
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import FileResponse
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -72,7 +73,14 @@ app.include_router(chat.router, prefix="/api")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static", "admin")
 
-# 수정된 부분: 정확한 절대 경로를 전달합니다.
+# 관리자 HTML은 배포 직후 브라우저가 구버전을 재사용하지 않도록 캐시하지 않습니다.
+@app.get("/admin/index.html", include_in_schema=False)
+async def admin_index():
+    return FileResponse(
+        os.path.join(STATIC_DIR, "index.html"),
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
 app.mount("/admin", StaticFiles(directory=STATIC_DIR, html=True), name="admin")
 # --- 종목 등록용 데이터 모델 ---
 class EtfRegistration(BaseModel):
