@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from supabase import create_client
 
 from app.core.security import create_access_token, hash_password, verify_password
-from app.database import SUPABASE_KEY, SUPABASE_URL, supabase
+from app.database import SUPABASE_ANON_KEY, SUPABASE_KEY, SUPABASE_URL, supabase
 
 
 def register_user(email, password, nickname):
@@ -53,7 +53,11 @@ def authenticate_user(email, password):
         # 과거 데이터처럼 public.users 해시와 Auth 비밀번호가 분리된 경우에도
         # 실제 Supabase Auth 비밀번호가 유효하면 같은 프로필·권한으로 로그인합니다.
         try:
-            auth_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+            # 로그인 검증은 Supabase Auth의 공개 클라이언트를 사용합니다.
+            # Render에 남아 있는 레거시 SUPABASE_KEY가 만료되어도
+            # 정상적인 ANON 키로 인증할 수 있도록 명시적으로 분리합니다.
+            auth_key = SUPABASE_ANON_KEY or SUPABASE_KEY
+            auth_client = create_client(SUPABASE_URL, auth_key)
             auth_response = auth_client.auth.sign_in_with_password({
                 "email": email,
                 "password": password,
