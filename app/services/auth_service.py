@@ -53,16 +53,24 @@ def authenticate_user(email, password):
         # 과거 데이터처럼 public.users 해시와 Auth 비밀번호가 분리된 경우에도
         # 실제 Supabase Auth 비밀번호가 유효하면 같은 프로필·권한으로 로그인합니다.
         try:
-            # 로그인 검증은 Supabase Auth의 공개 클라이언트를 사용합니다.
-            # Render에 남아 있는 레거시 SUPABASE_KEY가 만료되어도
-            # 정상적인 ANON 키로 인증할 수 있도록 명시적으로 분리합니다.
-            auth_key = SUPABASE_ANON_KEY or SUPABASE_KEY
-            auth_client = create_client(SUPABASE_URL, auth_key)
-            auth_response = auth_client.auth.sign_in_with_password({
-                "email": email,
-                "password": password,
-            })
-            auth_password_valid = auth_response.user is not None
+            # 키 이름이 서로 다른 운영 환경을 호환하되, 공개 ANON 키를 우선합니다.
+            # 한 키가 오래되었거나 잘못 등록되어도 다른 유효 키로 재검증합니다.
+            auth_password_valid = False
+            auth_keys = list(dict.fromkeys(
+                key for key in (SUPABASE_ANON_KEY, SUPABASE_KEY) if key
+            ))
+            for auth_key in auth_keys:
+                try:
+                    auth_client = create_client(SUPABASE_URL, auth_key)
+                    auth_response = auth_client.auth.sign_in_with_password({
+                        "email": email,
+                        "password": password,
+                    })
+                    if auth_response.user is not None:
+                        auth_password_valid = True
+                        break
+                except Exception:
+                    continue
         except Exception:
             auth_password_valid = False
 
