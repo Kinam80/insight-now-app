@@ -20,10 +20,35 @@ REACTION_EMOJIS = {"🔥", "👏", "📌", "🚀"}
 BLOCKED_TERMS = ("자살", "죽어", "죽여", "한강 가", "혐오")
 LIVE_MESSAGE_COOLDOWN_SECONDS = 12
 DAILY_POINT_CAP = 60
-SLOT_MAX_WAGER = 20
-SLOT_DAILY_WAGER_CAP = 100
+GAME_MAX_WAGER = 20
+GAME_DAILY_WAGER_CAP = 100
+SLOT_MAX_WAGER = GAME_MAX_WAGER
+SLOT_DAILY_WAGER_CAP = GAME_DAILY_WAGER_CAP
 SLOT_SYMBOLS = ("🍒", "🔔", "⭐", "💎", "7️⃣")
 SLOT_MULTIPLIERS = {"🍒": 3, "🔔": 5, "⭐": 8, "💎": 12, "7️⃣": 20}
+GAME_RULES = {
+    "slot777": {
+        "name": "9칸 일확천금 777",
+        "max_wager": GAME_MAX_WAGER,
+        "daily_wager_cap": GAME_DAILY_WAGER_CAP,
+        "notice": "일반 보드 88% · 당첨 보드 12%, 당첨 보드 배율은 5·10·20배입니다.",
+        "probabilities": {"일반 보드": 88, "당첨 보드": 12},
+    },
+    "dropball": {
+        "name": "드랍볼 곱하기 파이낸스",
+        "max_wager": GAME_MAX_WAGER,
+        "daily_wager_cap": GAME_DAILY_WAGER_CAP,
+        "notice": "꽝·1배 구간이 넓고 고배율 구간은 좁은 공개 확률표를 사용합니다.",
+        "probabilities": {"꽝": 40, "1배": 35, "2배": 12, "3배": 8, "5배": 4, "10배": 1},
+    },
+    "runner": {
+        "name": "동물 상자 러닝 배틀",
+        "max_wager": GAME_MAX_WAGER,
+        "daily_wager_cap": GAME_DAILY_WAGER_CAP,
+        "notice": "각 상자 폭탄 확률 45% · 안전 구간에서 0·1·2·4배 보상이 공개됩니다.",
+        "probabilities": {"폭탄": 45, "안전": 55, "안전 보상 0배": 35, "안전 보상 1배": 48, "안전 보상 2배": 14, "안전 보상 4배": 3},
+    },
+}
 POINT_RULES = {
     "community_post": (20, "투자 기록 작성"),
     "community_comment": (5, "건설적 대화 참여"),
@@ -105,7 +130,18 @@ class LiveMessageRequest(BaseModel):
 
 class SlotSpinRequest(BaseModel):
     nickname: str = Field(min_length=2, max_length=18)
-    wager: int = Field(ge=1, le=SLOT_MAX_WAGER)
+    wager: int = Field(ge=1, le=GAME_MAX_WAGER)
+
+
+class DropballRequest(BaseModel):
+    nickname: str = Field(min_length=2, max_length=18)
+    wager: int = Field(ge=1, le=GAME_MAX_WAGER)
+
+
+class RunnerRequest(BaseModel):
+    nickname: str = Field(min_length=2, max_length=18)
+    wager: int = Field(ge=1, le=GAME_MAX_WAGER)
+    animal: Literal["고양이", "강아지", "여우", "토끼"] = "고양이"
 
 
 def _clean_text(value: str, limit: int) -> str:
@@ -424,11 +460,11 @@ def get_community_profile(nickname: str):
     return {"status": "success", "profile": _reward_profile(nickname)}
 
 
-def _slot_wager_used_today(nickname: str) -> int:
+def _game_wager_used_today(nickname: str) -> int:
     today = datetime.now(timezone.utc).date()
     used = 0
     for row in (_decode_row(item) for item in _read_rows(MAX_POSTS)):
-        if row.get("type") != "reward" or row.get("action") != "slot_spin":
+        if row.get("type") != "reward" or row.get("action") not in {"slot_spin", "dropball", "runner"}:
             continue
         if row.get("nickname") != nickname:
             continue
@@ -441,71 +477,133 @@ def _slot_wager_used_today(nickname: str) -> int:
     return used
 
 
-def play_slot(nickname: str, wager: int) -> dict[str, Any]:
-    """서버에서 결과를 생성하는 포인트 전용 슬롯 게임입니다.
+# 이전 이름을 유지해 기존 테스트·클라이언트와 호환합니다.
+def _slot_wager_used_today(nickname: str) -> int:
+    return _game_wager_used_today(nickname)
 
-    현금 결제·환전·출금은 없으며, 베팅 상한과 일일 이용량을 적용합니다.
-    """
+
+def _validate_game_wager(nickname: str, wager: int) -> tuple[str, dict[str, Any], int]:
     safe_nickname = _clean_text(nickname, 18)
-    if wager < 1 or wager > SLOT_MAX_WAGER:
-        raise HTTPException(status_code=422, detail=f"한 번에 {SLOT_MAX_WAGER}P까지 사용할 수 있습니다.")
+    if wager < 1 or wager > GAME_MAX_WAGER:
+        raise HTTPException(status_code=422, detail=f"한 번에 {GAME_MAX_WAGER}P까지 사용할 수 있습니다.")
     profile = _reward_profile(safe_nickname)
     balance = max(0, int(profile["points"]))
     if balance < wager:
         raise HTTPException(status_code=422, detail=f"포인트가 부족합니다. 현재 잔액은 {balance}P입니다.")
-    used_today = _slot_wager_used_today(safe_nickname)
-    if used_today + wager > SLOT_DAILY_WAGER_CAP:
-        raise HTTPException(status_code=429, detail=f"슬롯은 하루 {SLOT_DAILY_WAGER_CAP}P까지 사용할 수 있습니다.")
+    used_today = _game_wager_used_today(safe_nickname)
+    if used_today + wager > GAME_DAILY_WAGER_CAP:
+        raise HTTPException(status_code=429, detail=f"게임은 하루 {GAME_DAILY_WAGER_CAP}P까지 이용할 수 있습니다.")
+    return safe_nickname, profile, used_today
 
-    rng = random.SystemRandom()
-    reels = [rng.choice(SLOT_SYMBOLS) for _ in range(3)]
-    multiplier = SLOT_MULTIPLIERS.get(reels[0], 0) if len(set(reels)) == 1 else 0
-    if len(set(reels)) == 2:
-        # 두 개 일치 시에는 원금만 돌려주어 잔액이 급격히 줄지 않게 합니다.
-        matching = next(symbol for symbol in reels if reels.count(symbol) == 2)
-        multiplier = 1 if matching in SLOT_SYMBOLS else 0
-    payout = wager * multiplier
-    net = payout - wager
-    reason = f"머니 슬롯 {'·'.join(reels)} · {multiplier}배"
+
+def _record_game(nickname: str, game: str, wager: int, net: int, payload: dict[str, Any]) -> dict[str, Any]:
     supabase.table("chat_messages").insert(
         {
-            "user_email": safe_nickname,
+            "user_email": nickname,
             "content": _encode_payload(
                 {
                     "type": "reward",
-                    "nickname": safe_nickname,
+                    "nickname": nickname,
                     "points": net,
-                    "reason": reason,
-                    "action": "slot_spin",
-                    "game": "money_slot",
+                    "reason": payload.get("reason", GAME_RULES[game]["name"]),
+                    "action": game if game != "slot777" else "slot_spin",
+                    "game": game,
                     "wager": wager,
-                    "payout": payout,
-                    "reels": reels,
-                    "multiplier": multiplier,
+                    "payout": max(0, int(payload.get("payout") or 0)),
+                    **payload,
                 }
             ),
         }
     ).execute()
-    return {
-        "reels": reels,
-        "wager": wager,
-        "payout": payout,
-        "net": net,
-        "multiplier": multiplier,
-        "daily_wager_used": used_today + wager,
-        "daily_wager_cap": SLOT_DAILY_WAGER_CAP,
-        "profile": _reward_profile(safe_nickname),
-    }
+    used_today = _game_wager_used_today(nickname)
+    return {**payload, "wager": wager, "net": net, "daily_wager_used": used_today, "daily_wager_cap": GAME_DAILY_WAGER_CAP, "profile": _reward_profile(nickname)}
+
+
+def _slot777_board() -> tuple[list[str], list[int], int]:
+    rng = random.SystemRandom()
+    board = [rng.choice(SLOT_SYMBOLS) for _ in range(9)]
+    # 당첨 여부를 먼저 공개 규칙에 맞춰 결정합니다. 기본 보드는 모든 줄을 깨뜨립니다.
+    if rng.random() >= 0.12:
+        for line in ((0, 1, 2), (3, 4, 5), (6, 7, 8), (0, 3, 6), (1, 4, 7), (2, 5, 8), (0, 4, 8), (2, 4, 6)):
+            if board[line[0]] == board[line[1]] == board[line[2]]:
+                board[line[2]] = next(symbol for symbol in SLOT_SYMBOLS if symbol != board[line[0]])
+        return board, [], 0
+    symbol = rng.choice(SLOT_SYMBOLS)
+    line = rng.choice(((0, 1, 2), (3, 4, 5), (6, 7, 8), (0, 3, 6), (1, 4, 7), (2, 5, 8), (0, 4, 8), (2, 4, 6)))
+    for index in line:
+        board[index] = symbol
+    return board, list(line), {"🍒": 5, "🔔": 5, "⭐": 10, "💎": 10, "7️⃣": 20}[symbol]
+
+
+def play_slot777(nickname: str, wager: int) -> dict[str, Any]:
+    safe_nickname, _, used_today = _validate_game_wager(nickname, wager)
+    board, winning_line, multiplier = _slot777_board()
+    payout = wager * multiplier
+    return _record_game(safe_nickname, "slot777", wager, payout - wager, {"board": board, "winning_line": winning_line, "multiplier": multiplier, "payout": payout, "reason": f"9칸 777 · {multiplier}배", "rules": GAME_RULES["slot777"], "daily_wager_used_before": used_today})
+
+
+def play_dropball(nickname: str, wager: int) -> dict[str, Any]:
+    safe_nickname, _, used_today = _validate_game_wager(nickname, wager)
+    rng = random.SystemRandom()
+    buckets = [("꽝", 0, 0.22), ("꽝", 0, 0.18), ("1배", 1, 0.20), ("1배", 1, 0.15), ("2배", 2, 0.12), ("3배", 3, 0.08), ("5배", 5, 0.04), ("10배", 10, 0.01)]
+    label, multiplier, _ = rng.choices(buckets, weights=[item[2] for item in buckets], k=1)[0]
+    bucket_index = rng.randrange(8)
+    path = [{"x": 50, "y": 0}]
+    x = 50.0
+    for step in range(1, 13):
+        x = max(8.0, min(92.0, x + rng.uniform(-11.0, 11.0)))
+        path.append({"x": round(x, 2), "y": round(step / 12 * 100, 2)})
+    payout = wager * multiplier
+    return _record_game(safe_nickname, "dropball", wager, payout - wager, {"path": path, "bucket_index": bucket_index, "bucket_label": label, "multiplier": multiplier, "payout": payout, "reason": f"드랍볼 · {label}", "rules": GAME_RULES["dropball"], "daily_wager_used_before": used_today})
+
+
+def play_runner(nickname: str, wager: int, animal: str) -> dict[str, Any]:
+    safe_nickname, _, used_today = _validate_game_wager(nickname, wager)
+    rng = random.SystemRandom()
+    events: list[dict[str, Any]] = []
+    bomb = False
+    multiplier = 0
+    for step in range(1, 7):
+        if rng.random() < 0.45:
+            events.append({"step": step, "kind": "bomb", "label": "폭탄 상자"})
+            bomb = True
+            break
+        step_multiplier = rng.choices([0, 1, 2, 4], weights=[0.35, 0.48, 0.14, 0.03], k=1)[0]
+        multiplier = max(multiplier, step_multiplier)
+        events.append({"step": step, "kind": "safe", "label": "보상 상자", "multiplier": step_multiplier})
+    payout = 0 if bomb else wager * multiplier
+    return _record_game(safe_nickname, "runner", wager, payout - wager, {"animal": animal, "events": events, "game_over": bomb, "multiplier": 0 if bomb else multiplier, "payout": payout, "reason": "러닝 배틀 · 폭탄 상자" if bomb else f"러닝 배틀 · {multiplier}배", "rules": GAME_RULES["runner"], "daily_wager_used_before": used_today})
 
 
 @router.get("/community/game/profile/{nickname}")
 def get_game_profile(nickname: str):
-    return {"status": "success", "profile": _reward_profile(nickname)}
+    return {"status": "success", "profile": _reward_profile(nickname), "rules": list(GAME_RULES.values())}
+
+
+@router.get("/community/game/rules")
+def get_game_rules():
+    return {"status": "success", "games": GAME_RULES, "notice": "현금화·환전·양도 불가 포인트 전용 게임이며 확률표는 운영 정책에 공개됩니다."}
 
 
 @router.post("/community/game/slot")
 def spin_money_slot(data: SlotSpinRequest):
-    return {"status": "created", "game": play_slot(data.nickname, data.wager)}
+    # 기존 3칸 API 경로는 새 9칸 게임으로 연결합니다.
+    return {"status": "created", "game": play_slot777(data.nickname, data.wager)}
+
+
+@router.post("/community/game/slot777")
+def spin_slot777(data: SlotSpinRequest):
+    return {"status": "created", "game": play_slot777(data.nickname, data.wager)}
+
+
+@router.post("/community/game/dropball")
+def spin_dropball(data: DropballRequest):
+    return {"status": "created", "game": play_dropball(data.nickname, data.wager)}
+
+
+@router.post("/community/game/runner")
+def run_runner(data: RunnerRequest):
+    return {"status": "created", "game": play_runner(data.nickname, data.wager, data.animal)}
 
 
 @router.get("/community/live/messages")

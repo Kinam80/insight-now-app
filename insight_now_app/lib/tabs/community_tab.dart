@@ -1604,11 +1604,21 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
 
   late final String _nickname;
   _CommunityProfile _profile = const _CommunityProfile.empty();
-  List<String> _reels = const ['🍒', '🔔', '⭐'];
-  bool _loading = true;
+  String _game = 'hub';
+  int _wager = 5;
+  bool _autoMode = false;
+  bool _autoPlaying = false;
   bool _spinning = false;
+  bool _loading = true;
+  String _animal = '고양이';
   String? _message;
   int? _lastNet;
+  List<String> _slotBoard = List<String>.filled(9, '🍒');
+  List<Map<String, dynamic>> _path = const [];
+  int _dropBucket = 0;
+  String _dropLabel = '';
+  List<Map<String, dynamic>> _runnerEvents = const [];
+  bool _runnerGameOver = false;
   Timer? _animationTimer;
 
   @override
@@ -1620,6 +1630,7 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
 
   @override
   void dispose() {
+    _autoPlaying = false;
     _animationTimer?.cancel();
     super.dispose();
   }
@@ -1649,11 +1660,14 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _message = error.toString().replaceFirst('Exception: ', '');
+          _message = _cleanError(error);
         });
       }
     }
   }
+
+  String _cleanError(Object error) =>
+      error.toString().replaceFirst('Exception: ', '');
 
   String _errorText(dynamic body, String fallback) {
     final detail = body is Map ? body['detail'] : null;
@@ -1669,62 +1683,101 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
     return detail?.toString() ?? fallback;
   }
 
-  Future<void> _spin(int wager) async {
-    if (_spinning || _profile.points < wager) return;
+  Future<Map<String, dynamic>> _requestGame(
+    String endpoint,
+    Map<String, dynamic> payload,
+  ) async {
+    final response = await http
+        .post(
+          Uri.parse(
+            '${ApiConstants.baseUrl}/api/chat/community/game/$endpoint',
+          ),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode(payload),
+        )
+        .timeout(const Duration(seconds: 20));
+    final body = jsonDecode(utf8.decode(response.bodyBytes));
+    if (response.statusCode >= 300) {
+      throw Exception(_errorText(body, '게임을 실행하지 못했습니다.'));
+    }
+    final game = body is Map && body['game'] is Map
+        ? Map<String, dynamic>.from(body['game'] as Map)
+        : <String, dynamic>{};
+    if (game['profile'] is Map && mounted) {
+      _profile = _CommunityProfile.fromJson(
+        Map<String, dynamic>.from(game['profile'] as Map),
+      );
+    }
+    return game;
+  }
+
+  Future<void> _runOnce() async {
+    if (_spinning || _profile.points < _wager) return;
     setState(() {
       _spinning = true;
       _message = null;
       _lastNet = null;
     });
-    final random = Random();
-    _animationTimer?.cancel();
-    _animationTimer = Timer.periodic(const Duration(milliseconds: 90), (_) {
-      if (!mounted) return;
-      setState(
-        () => _reels = List.generate(
-          3,
-          (_) => const ['🍒', '🔔', '⭐', '💎', '7️⃣'][random.nextInt(5)],
-        ),
-      );
-    });
     try {
-      final response = await http
-          .post(
-            Uri.parse('${ApiConstants.baseUrl}/api/chat/community/game/slot'),
-            headers: const {'Content-Type': 'application/json'},
-            body: jsonEncode({'nickname': _nickname, 'wager': wager}),
-          )
-          .timeout(const Duration(seconds: 20));
-      await Future<void>.delayed(const Duration(milliseconds: 650));
-      final body = jsonDecode(utf8.decode(response.bodyBytes));
-      if (response.statusCode >= 300) {
-        throw Exception(_errorText(body, '슬롯을 실행하지 못했습니다.'));
+      late final Map<String, dynamic> game;
+      if (_game == 'slot777') {
+        game = await _requestGame('slot777', {
+          'nickname': _nickname,
+          'wager': _wager,
+        });
+        _animateSlot(
+          game['board'] is List
+              ? (game['board'] as List).map((item) => item.toString()).toList()
+              : _slotBoard,
+        );
+      } else if (_game == 'dropball') {
+        game = await _requestGame('dropball', {
+          'nickname': _nickname,
+          'wager': _wager,
+        });
+      } else {
+        game = await _requestGame('runner', {
+          'nickname': _nickname,
+          'wager': _wager,
+          'animal': _animal,
+        });
       }
-      final game = body is Map && body['game'] is Map
-          ? Map<String, dynamic>.from(body['game'] as Map)
-          : <String, dynamic>{};
-      final rawProfile = game['profile'];
       if (!mounted) return;
       setState(() {
-        _reels = game['reels'] is List
-            ? (game['reels'] as List).map((item) => item.toString()).toList()
-            : _reels;
         _lastNet = (game['net'] as num?)?.toInt() ?? 0;
-        _profile = rawProfile is Map
-            ? _CommunityProfile.fromJson(Map<String, dynamic>.from(rawProfile))
-            : _profile;
-        _message = _lastNet! > 0
-            ? '+${_lastNet}P 획득!'
-            : _lastNet == 0
-            ? '두 칸 일치 · 베팅 포인트가 반환됐습니다.'
-            : '${_lastNet}P 사용했습니다.';
+        if (_game == 'slot777') {
+          _slotBoard = game['board'] is List
+              ? (game['board'] as List).map((item) => item.toString()).toList()
+              : _slotBoard;
+          _message = _lastNet! > 0
+              ? '+${_lastNet}P 획득 · ${game['multiplier'] ?? 0}배!'
+              : '${_lastNet}P 정산되었습니다.';
+        } else if (_game == 'dropball') {
+          _path = game['path'] is List
+              ? (game['path'] as List)
+                    .whereType<Map>()
+                    .map((item) => Map<String, dynamic>.from(item))
+                    .toList()
+              : const [];
+          _dropBucket = (game['bucket_index'] as num?)?.toInt() ?? 0;
+          _dropLabel = game['bucket_label']?.toString() ?? '';
+          _message =
+              '${_dropLabel.isEmpty ? '결과' : _dropLabel} · ${_lastNet! >= 0 ? '+' : ''}${_lastNet}P';
+        } else {
+          _runnerEvents = game['events'] is List
+              ? (game['events'] as List)
+                    .whereType<Map>()
+                    .map((item) => Map<String, dynamic>.from(item))
+                    .toList()
+              : const [];
+          _runnerGameOver = game['game_over'] == true;
+          _message = _runnerGameOver
+              ? '폭탄 상자에 닿았습니다. ${_lastNet}P 정산'
+              : '${game['multiplier'] ?? 0}배 안전 돌파 · ${_lastNet! >= 0 ? '+' : ''}${_lastNet}P';
+        }
       });
     } catch (error) {
-      if (mounted) {
-        setState(
-          () => _message = error.toString().replaceFirst('Exception: ', ''),
-        );
-      }
+      if (mounted) setState(() => _message = _cleanError(error));
     } finally {
       _animationTimer?.cancel();
       _animationTimer = null;
@@ -1732,203 +1785,622 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
     }
   }
 
+  void _animateSlot(List<String> finalBoard) {
+    final random = Random();
+    _animationTimer?.cancel();
+    _animationTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
+      if (!mounted) return;
+      setState(
+        () => _slotBoard = List.generate(
+          9,
+          (_) => const ['🍒', '🔔', '⭐', '💎', '7️⃣'][random.nextInt(5)],
+        ),
+      );
+    });
+    Future<void>.delayed(const Duration(milliseconds: 650), () {
+      if (mounted) setState(() => _slotBoard = finalBoard);
+    });
+  }
+
+  Future<void> _startAuto() async {
+    if (_autoPlaying || _profile.points < _wager) return;
+    setState(() {
+      _autoPlaying = true;
+      _autoMode = true;
+      _message = '자동 플레이를 시작했습니다.';
+    });
+    var rounds = 0;
+    try {
+      while (mounted &&
+          _autoPlaying &&
+          _profile.points >= _wager &&
+          rounds < 50) {
+        await _runOnce();
+        rounds += 1;
+        if (mounted) {
+          await Future<void>.delayed(const Duration(milliseconds: 420));
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _autoPlaying = false;
+          _message = _profile.points < _wager
+              ? '포인트가 부족해 자동 플레이를 멈췄습니다.'
+              : '자동 플레이를 멈췄습니다.';
+        });
+      }
+    }
+  }
+
+  void _stopAuto() {
+    if (mounted) setState(() => _autoPlaying = false);
+  }
+
+  void _selectGame(String game) => setState(() {
+    _game = game;
+    _message = null;
+    _lastNet = null;
+  });
+
+  Future<void> _playWithWager(int amount) async {
+    if (_spinning || _autoPlaying || _loading || _profile.points < amount) {
+      return;
+    }
+    setState(() => _wager = amount);
+    if (_autoMode) {
+      await _startAuto();
+    } else {
+      await _runOnce();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).viewInsets.bottom;
     return Padding(
-      padding: EdgeInsets.fromLTRB(12, 30, 12, bottom + 12),
+      padding: EdgeInsets.fromLTRB(12, 22, 12, bottom + 12),
       child: Material(
         color: _surface,
         borderRadius: BorderRadius.circular(26),
         child: SafeArea(
           top: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.casino_rounded, color: _purple),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          '머니 슬롯',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 21,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          color: Colors.white54,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      '오늘의 포인트로 가볍게 즐기는 3칸 게임',
-                      style: TextStyle(color: Colors.white54, fontSize: 12),
-                    ),
-                  ),
-                  const SizedBox(height: 15),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.account_balance_wallet_rounded,
-                          color: _gold,
-                          size: 19,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          '내 잔액',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          _loading ? '확인 중…' : '${_profile.points}P',
-                          style: const TextStyle(
-                            color: _gold,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 20,
-                      horizontal: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF24173C), Color(0xFF121D35)],
-                      ),
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(
-                        color: _purple.withValues(alpha: 0.35),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: _reels
-                          .map(
-                            (symbol) => Container(
-                              width: 72,
-                              height: 72,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: _gold.withValues(alpha: 0.35),
-                                ),
-                              ),
-                              child: Text(
-                                symbol,
-                                style: const TextStyle(fontSize: 34),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ),
-                  const SizedBox(height: 13),
-                  if (_message != null)
-                    Text(
-                      _message!,
-                      style: TextStyle(
-                        color: (_lastNet ?? 0) >= 0
-                            ? _mint
-                            : const Color(0xFFFB7185),
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      '사용할 포인트를 선택하세요',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 9),
-                  Row(
-                    children: [1, 5, 10, 20]
-                        .map(
-                          (wager) => Expanded(
-                            child: Padding(
-                              padding: EdgeInsets.only(
-                                right: wager == 20 ? 0 : 7,
-                              ),
-                              child: FilledButton(
-                                onPressed:
-                                    _spinning ||
-                                        _loading ||
-                                        _profile.points < wager
-                                    ? null
-                                    : () => _spin(wager),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: _purple,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                ),
-                                child: Text(
-                                  '${wager}P',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                  const SizedBox(height: 13),
-                  const Text(
-                    '현금화·환전·양도 불가 포인트 전용입니다. 한 번 최대 20P, 하루 최대 100P까지 이용할 수 있습니다.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white38,
-                      fontSize: 10,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+            child: _game == 'hub' ? _buildHub() : _buildGame(),
           ),
         ),
       ),
     );
   }
+
+  Widget _header(String title, IconData icon, {bool back = false}) {
+    return Row(
+      children: [
+        if (back)
+          IconButton(
+            onPressed: () => _selectGame('hub'),
+            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white70),
+          ),
+        Icon(icon, color: _purple),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.close_rounded, color: Colors.white54),
+        ),
+      ],
+    );
+  }
+
+  Widget _balance() => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    decoration: BoxDecoration(
+      color: Colors.black.withValues(alpha: 0.18),
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: Row(
+      children: [
+        const Icon(
+          Icons.account_balance_wallet_rounded,
+          color: _gold,
+          size: 18,
+        ),
+        const SizedBox(width: 7),
+        const Text(
+          '내 잔액',
+          style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700),
+        ),
+        const Spacer(),
+        Text(
+          _loading ? '확인 중…' : '${_profile.points}P',
+          style: const TextStyle(
+            color: _gold,
+            fontSize: 17,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _buildHub() {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _header('머니 포인트 놀이터', Icons.casino_rounded),
+          const Text(
+            '3가지 게임 · 수동/자동 플레이',
+            style: TextStyle(color: Colors.white54, fontSize: 12),
+          ),
+          const SizedBox(height: 14),
+          _balance(),
+          const SizedBox(height: 14),
+          _gameCard(
+            'slot777',
+            '9칸 일확천금 777',
+            '3×3 전체가 회전하는 클래식 슬롯',
+            Icons.grid_view_rounded,
+            const Color(0xFFC084FC),
+            '88% 일반 보드 · 12% 당첨 보드',
+          ),
+          _gameCard(
+            'dropball',
+            '드랍볼 곱하기 파이낸스',
+            '구슬 경로를 따라 배율 칸에 도착',
+            Icons.sports_baseball_rounded,
+            const Color(0xFF60A5FA),
+            '꽝·1배 구간이 넓은 공개 확률표',
+          ),
+          _gameCard(
+            'runner',
+            '동물 상자 러닝 배틀',
+            '동물을 고르고 상자를 타이밍 돌파',
+            Icons.pets_rounded,
+            const Color(0xFF4FD1C5),
+            '폭탄 상자 45% · 즉시 게임 오버',
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '현금화·환전·양도 불가 포인트 전용입니다. 한 번 최대 20P, 하루 최대 100P까지 이용합니다.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white38, fontSize: 10, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _gameCard(
+    String game,
+    String title,
+    String subtitle,
+    IconData icon,
+    Color color,
+    String rule,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: InkWell(
+        onTap: () => _selectGame(game),
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: color.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 45,
+                height: 45,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: color, size: 25),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      rule,
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: Colors.white54),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGame() {
+    final title = _game == 'slot777'
+        ? '9칸 일확천금 777'
+        : _game == 'dropball'
+        ? '드랍볼 곱하기 파이낸스'
+        : '동물 상자 러닝 배틀';
+    final icon = _game == 'slot777'
+        ? Icons.grid_view_rounded
+        : _game == 'dropball'
+        ? Icons.sports_baseball_rounded
+        : Icons.pets_rounded;
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _header(title, icon, back: true),
+          _balance(),
+          const SizedBox(height: 12),
+          if (_game == 'slot777')
+            _slotView()
+          else if (_game == 'dropball')
+            _dropballView()
+          else
+            _runnerView(),
+          const SizedBox(height: 12),
+          if (_message != null)
+            Center(
+              child: Text(
+                _message!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: (_lastNet ?? 0) >= 0 ? _mint : const Color(0xFFFB7185),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          const SizedBox(height: 10),
+          _modeControls(),
+          const SizedBox(height: 8),
+          _wagerControls(),
+          const SizedBox(height: 12),
+          if (_autoPlaying)
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _stopAuto,
+                icon: const Icon(Icons.stop_circle_outlined),
+                label: const Text('자동 플레이 중지'),
+              ),
+            ),
+          const SizedBox(height: 7),
+          const Text(
+            '결과는 서버에서 생성·정산됩니다. 게임 확률은 운영 화면의 공개 정책을 따릅니다.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white38, fontSize: 10, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _modeControls() => Row(
+    children: [
+      const Text(
+        '플레이 모드',
+        style: TextStyle(
+          color: Colors.white70,
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+        ),
+      ),
+      const SizedBox(width: 8),
+      ChoiceChip(
+        label: const Text('수동'),
+        selected: !_autoMode,
+        onSelected: _autoPlaying
+            ? null
+            : (_) => setState(() => _autoMode = false),
+        selectedColor: _mint.withValues(alpha: 0.25),
+        labelStyle: TextStyle(color: !_autoMode ? _mint : Colors.white60),
+      ),
+      const SizedBox(width: 7),
+      ChoiceChip(
+        label: const Text('자동'),
+        selected: _autoMode,
+        onSelected: _autoPlaying
+            ? null
+            : (_) => setState(() => _autoMode = true),
+        selectedColor: _purple.withValues(alpha: 0.3),
+        labelStyle: TextStyle(color: _autoMode ? _purple : Colors.white60),
+      ),
+    ],
+  );
+
+  Widget _wagerControls() {
+    return Row(
+      children: [1, 5, 10, 20]
+          .map(
+            (amount) => Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(right: amount == 20 ? 0 : 6),
+                child: FilledButton(
+                  onPressed:
+                      _spinning ||
+                          _autoPlaying ||
+                          _loading ||
+                          _profile.points < amount
+                      ? null
+                      : () => _playWithWager(amount),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: amount == _wager
+                        ? _purple
+                        : Colors.white10,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                  ),
+                  child: Text(
+                    '${amount}P ${_autoMode ? '자동 시작' : '실행'}',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  Widget _slotView() {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF24173C),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _purple.withValues(alpha: 0.35)),
+          ),
+          child: GridView.count(
+            crossAxisCount: 3,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            children: _slotBoard
+                .map(
+                  (symbol) => Container(
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _gold.withValues(alpha: 0.3)),
+                    ),
+                    child: Text(symbol, style: const TextStyle(fontSize: 30)),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+        const SizedBox(height: 7),
+        const Text(
+          '같은 심볼 3개가 한 줄이면 당첨 · 전체 확률표는 게임 안내에 공개',
+          style: TextStyle(color: Colors.white54, fontSize: 10),
+        ),
+      ],
+    );
+  }
+
+  Widget _dropballView() => Column(
+    children: [
+      Container(
+        height: 220,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: const Color(0xFF0C1C32),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: const Color(0xFF60A5FA).withValues(alpha: 0.35),
+          ),
+        ),
+        child: Stack(
+          children: [
+            for (var row = 1; row < 8; row++)
+              Positioned(
+                top: row * 24.0,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: List.generate(
+                    row + 1,
+                    (_) => const Icon(
+                      Icons.circle,
+                      size: 5,
+                      color: Colors.white30,
+                    ),
+                  ),
+                ),
+              ),
+            if (_path.isNotEmpty)
+              ..._path.map(
+                (point) => Positioned(
+                  left: ((point['x'] as num? ?? 50).toDouble() / 100) * 300,
+                  top: ((point['y'] as num? ?? 50).toDouble() / 100) * 190,
+                  child: const Icon(
+                    Icons.circle,
+                    size: 8,
+                    color: Color(0xFF60A5FA),
+                  ),
+                ),
+              ),
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 8,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Text(
+                    '꽝',
+                    style: TextStyle(color: Colors.white54, fontSize: 11),
+                  ),
+                  Text(
+                    '1배',
+                    style: TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                  Text(
+                    '2배',
+                    style: TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                  Text(
+                    '3배',
+                    style: TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                  Text(
+                    '5배',
+                    style: TextStyle(color: Color(0xFFF6C85F), fontSize: 11),
+                  ),
+                  Text(
+                    '10배',
+                    style: TextStyle(color: Color(0xFFF6C85F), fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 7),
+      Text(
+        _dropLabel.isEmpty
+            ? '구슬이 경로를 따라 내려갑니다.'
+            : '도착: $_dropLabel · ${_dropBucket + 1}번 구간',
+        style: const TextStyle(color: Colors.white54, fontSize: 10),
+      ),
+    ],
+  );
+
+  Widget _runnerView() => Column(
+    children: [
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: ['고양이', '강아지', '여우', '토끼']
+            .map(
+              (animal) => ChoiceChip(
+                label: Text(animal),
+                selected: _animal == animal,
+                onSelected: _spinning || _autoPlaying
+                    ? null
+                    : (_) => setState(() => _animal = animal),
+                selectedColor: _mint.withValues(alpha: 0.25),
+                labelStyle: TextStyle(
+                  color: _animal == animal ? _mint : Colors.white60,
+                ),
+              ),
+            )
+            .toList(),
+      ),
+      const SizedBox(height: 10),
+      Container(
+        height: 155,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: const Color(0xFF132A31),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _mint.withValues(alpha: 0.35)),
+        ),
+        child: Stack(
+          children: [
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: 35,
+              child: Container(height: 5, color: Colors.white24),
+            ),
+            Positioned(
+              left: 32,
+              bottom: 48,
+              child: Text(
+                _runnerGameOver
+                    ? '💥'
+                    : _animal == '고양이'
+                    ? '🐈'
+                    : _animal == '강아지'
+                    ? '🐕'
+                    : _animal == '여우'
+                    ? '🦊'
+                    : '🐇',
+                style: const TextStyle(fontSize: 42),
+              ),
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              top: 16,
+              child: Text(
+                _runnerEvents.isEmpty
+                    ? '상자를 터치할 타이밍을 잡아 보세요.'
+                    : _runnerEvents
+                          .map(
+                            (event) => event['kind'] == 'bomb'
+                                ? '💣'
+                                : '${event['multiplier'] ?? 0}배',
+                          )
+                          .join('  →  '),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const Positioned(
+              right: 28,
+              bottom: 42,
+              child: Text('📦  📦  📦', style: TextStyle(fontSize: 25)),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 7),
+      const Text(
+        '안전 상자는 누적 배율, 폭탄 상자는 즉시 게임 오버입니다.',
+        style: TextStyle(color: Colors.white54, fontSize: 10),
+      ),
+    ],
+  );
 }
 
 class _CommunityProfile {
