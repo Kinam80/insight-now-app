@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -416,6 +417,8 @@ class _CommunityTabState extends State<CommunityTab>
                   _buildHero(feed),
                   const SizedBox(height: 16),
                   _buildLiveLounge(),
+                  const SizedBox(height: 14),
+                  _buildArcadeCard(),
                   const SizedBox(height: 16),
                   _buildQuickActions(),
                   const SizedBox(height: 20),
@@ -716,6 +719,93 @@ class _CommunityTabState extends State<CommunityTab>
                 fontSize: 12,
                 height: 1.35,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openArcade() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _PointArcadeSheet(initialNickname: _nickname),
+    );
+    await _loadProfile();
+  }
+
+  Widget _buildArcadeCard() {
+    return InkWell(
+      onTap: _openArcade,
+      borderRadius: BorderRadius.circular(22),
+      child: Ink(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF3B275E), Color(0xFF172A46)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: const Color(0xFFC084FC).withValues(alpha: 0.35),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0xFFC084FC).withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: const Icon(
+                Icons.casino_rounded,
+                color: Color(0xFFE9D5FF),
+                size: 27,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '머니 슬롯 · 포인트 놀이터',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    '포인트로 가볍게 즐기는 3칸 슬롯 게임',
+                    style: TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                  SizedBox(height: 3),
+                  Text(
+                    '현금화·환전 불가 · 한 번 최대 20P',
+                    style: TextStyle(color: Colors.white38, fontSize: 10),
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              children: [
+                Text(
+                  '${_profile.points}P',
+                  style: const TextStyle(
+                    color: Color(0xFFF6C85F),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Icon(Icons.chevron_right_rounded, color: Colors.white60),
+              ],
             ),
           ],
         ),
@@ -1493,6 +1583,350 @@ class _DiscussionSheetState extends State<_DiscussionSheet> {
       ),
       counterStyle: const TextStyle(color: Colors.white38),
       isDense: true,
+    );
+  }
+}
+
+class _PointArcadeSheet extends StatefulWidget {
+  const _PointArcadeSheet({required this.initialNickname});
+
+  final String initialNickname;
+
+  @override
+  State<_PointArcadeSheet> createState() => _PointArcadeSheetState();
+}
+
+class _PointArcadeSheetState extends State<_PointArcadeSheet> {
+  static const _surface = Color(0xFF10233B);
+  static const _mint = Color(0xFF4FD1C5);
+  static const _gold = Color(0xFFF6C85F);
+  static const _purple = Color(0xFFC084FC);
+
+  late final String _nickname;
+  _CommunityProfile _profile = const _CommunityProfile.empty();
+  List<String> _reels = const ['🍒', '🔔', '⭐'];
+  bool _loading = true;
+  bool _spinning = false;
+  String? _message;
+  int? _lastNet;
+  Timer? _animationTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _nickname = widget.initialNickname;
+    _loadProfile();
+  }
+
+  @override
+  void dispose() {
+    _animationTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final response = await http
+          .get(
+            Uri.parse(
+              '${ApiConstants.baseUrl}/api/chat/community/game/profile/${Uri.encodeComponent(_nickname)}',
+            ),
+          )
+          .timeout(const Duration(seconds: 15));
+      final body = jsonDecode(utf8.decode(response.bodyBytes));
+      if (response.statusCode != 200) {
+        throw Exception(_errorText(body, '포인트를 불러오지 못했습니다.'));
+      }
+      if (body is Map && body['profile'] is Map && mounted) {
+        setState(() {
+          _profile = _CommunityProfile.fromJson(
+            Map<String, dynamic>.from(body['profile'] as Map),
+          );
+          _loading = false;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _message = error.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    }
+  }
+
+  String _errorText(dynamic body, String fallback) {
+    final detail = body is Map ? body['detail'] : null;
+    if (detail is List) {
+      return detail
+          .map(
+            (item) =>
+                item is Map ? item['msg'] ?? item.toString() : item.toString(),
+          )
+          .join(' ');
+    }
+    if (detail is Map) return detail['msg']?.toString() ?? fallback;
+    return detail?.toString() ?? fallback;
+  }
+
+  Future<void> _spin(int wager) async {
+    if (_spinning || _profile.points < wager) return;
+    setState(() {
+      _spinning = true;
+      _message = null;
+      _lastNet = null;
+    });
+    final random = Random();
+    _animationTimer?.cancel();
+    _animationTimer = Timer.periodic(const Duration(milliseconds: 90), (_) {
+      if (!mounted) return;
+      setState(
+        () => _reels = List.generate(
+          3,
+          (_) => const ['🍒', '🔔', '⭐', '💎', '7️⃣'][random.nextInt(5)],
+        ),
+      );
+    });
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${ApiConstants.baseUrl}/api/chat/community/game/slot'),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({'nickname': _nickname, 'wager': wager}),
+          )
+          .timeout(const Duration(seconds: 20));
+      await Future<void>.delayed(const Duration(milliseconds: 650));
+      final body = jsonDecode(utf8.decode(response.bodyBytes));
+      if (response.statusCode >= 300) {
+        throw Exception(_errorText(body, '슬롯을 실행하지 못했습니다.'));
+      }
+      final game = body is Map && body['game'] is Map
+          ? Map<String, dynamic>.from(body['game'] as Map)
+          : <String, dynamic>{};
+      final rawProfile = game['profile'];
+      if (!mounted) return;
+      setState(() {
+        _reels = game['reels'] is List
+            ? (game['reels'] as List).map((item) => item.toString()).toList()
+            : _reels;
+        _lastNet = (game['net'] as num?)?.toInt() ?? 0;
+        _profile = rawProfile is Map
+            ? _CommunityProfile.fromJson(Map<String, dynamic>.from(rawProfile))
+            : _profile;
+        _message = _lastNet! > 0
+            ? '+${_lastNet}P 획득!'
+            : _lastNet == 0
+            ? '두 칸 일치 · 베팅 포인트가 반환됐습니다.'
+            : '${_lastNet}P 사용했습니다.';
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _message = error.toString().replaceFirst('Exception: ', ''),
+        );
+      }
+    } finally {
+      _animationTimer?.cancel();
+      _animationTimer = null;
+      if (mounted) setState(() => _spinning = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(12, 30, 12, bottom + 12),
+      child: Material(
+        color: _surface,
+        borderRadius: BorderRadius.circular(26),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.casino_rounded, color: _purple),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          '머니 슬롯',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 21,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white54,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '오늘의 포인트로 가볍게 즐기는 3칸 게임',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.account_balance_wallet_rounded,
+                          color: _gold,
+                          size: 19,
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          '내 잔액',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          _loading ? '확인 중…' : '${_profile.points}P',
+                          style: const TextStyle(
+                            color: _gold,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 20,
+                      horizontal: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF24173C), Color(0xFF121D35)],
+                      ),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(
+                        color: _purple.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: _reels
+                          .map(
+                            (symbol) => Container(
+                              width: 72,
+                              height: 72,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: _gold.withValues(alpha: 0.35),
+                                ),
+                              ),
+                              child: Text(
+                                symbol,
+                                style: const TextStyle(fontSize: 34),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 13),
+                  if (_message != null)
+                    Text(
+                      _message!,
+                      style: TextStyle(
+                        color: (_lastNet ?? 0) >= 0
+                            ? _mint
+                            : const Color(0xFFFB7185),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '사용할 포인트를 선택하세요',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                  Row(
+                    children: [1, 5, 10, 20]
+                        .map(
+                          (wager) => Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                right: wager == 20 ? 0 : 7,
+                              ),
+                              child: FilledButton(
+                                onPressed:
+                                    _spinning ||
+                                        _loading ||
+                                        _profile.points < wager
+                                    ? null
+                                    : () => _spin(wager),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: _purple,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                ),
+                                child: Text(
+                                  '${wager}P',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 13),
+                  const Text(
+                    '현금화·환전·양도 불가 포인트 전용입니다. 한 번 최대 20P, 하루 최대 100P까지 이용할 수 있습니다.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white38,
+                      fontSize: 10,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -26,7 +26,7 @@ class PasswordResetRequest(BaseModel):
 
 class PointAdjustmentRequest(BaseModel):
     nickname: str = Field(min_length=2, max_length=18)
-    delta: int = Field(ge=-5000, le=5000)
+    delta: int = Field(ge=-1000000, le=1000000)
     reason: str = Field(min_length=2, max_length=80)
 
 

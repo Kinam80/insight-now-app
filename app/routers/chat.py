@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import time
+import random
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
@@ -19,6 +20,10 @@ REACTION_EMOJIS = {"🔥", "👏", "📌", "🚀"}
 BLOCKED_TERMS = ("자살", "죽어", "죽여", "한강 가", "혐오")
 LIVE_MESSAGE_COOLDOWN_SECONDS = 12
 DAILY_POINT_CAP = 60
+SLOT_MAX_WAGER = 20
+SLOT_DAILY_WAGER_CAP = 100
+SLOT_SYMBOLS = ("🍒", "🔔", "⭐", "💎", "7️⃣")
+SLOT_MULTIPLIERS = {"🍒": 3, "🔔": 5, "⭐": 8, "💎": 12, "7️⃣": 20}
 POINT_RULES = {
     "community_post": (20, "투자 기록 작성"),
     "community_comment": (5, "건설적 대화 참여"),
@@ -96,6 +101,11 @@ class CommunityCommentRequest(BaseModel):
 class LiveMessageRequest(BaseModel):
     nickname: str = Field(min_length=2, max_length=18)
     body: str = Field(min_length=1, max_length=300)
+
+
+class SlotSpinRequest(BaseModel):
+    nickname: str = Field(min_length=2, max_length=18)
+    wager: int = Field(ge=1, le=SLOT_MAX_WAGER)
 
 
 def _clean_text(value: str, limit: int) -> str:
@@ -244,8 +254,9 @@ def admin_adjust_points(nickname: str, delta: int, reason: str) -> dict[str, Any
     safe_reason = _clean_text(reason, 80)
     if not delta:
         raise HTTPException(status_code=422, detail="조정할 포인트를 입력해 주세요.")
-    current = _reward_profile(safe_nickname)
-    applied_delta = min(delta, int(current["points"])) if delta < 0 else delta
+    current = max(0, int(_reward_profile(safe_nickname)["points"]))
+    # 차감은 현재 잔액을 넘지 않도록 음수 방향으로 제한합니다.
+    applied_delta = max(-current, delta) if delta < 0 else delta
     if not applied_delta:
         raise HTTPException(status_code=422, detail="현재 포인트보다 더 많이 차감할 수 없습니다.")
     supabase.table("chat_messages").insert(
@@ -411,6 +422,90 @@ def get_community_feed(limit: int = 40):
 @router.get("/community/profile/{nickname}")
 def get_community_profile(nickname: str):
     return {"status": "success", "profile": _reward_profile(nickname)}
+
+
+def _slot_wager_used_today(nickname: str) -> int:
+    today = datetime.now(timezone.utc).date()
+    used = 0
+    for row in (_decode_row(item) for item in _read_rows(MAX_POSTS)):
+        if row.get("type") != "reward" or row.get("action") != "slot_spin":
+            continue
+        if row.get("nickname") != nickname:
+            continue
+        try:
+            created = datetime.fromisoformat(str(row.get("created_at")).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if created.date() == today:
+            used += max(0, int(row.get("wager") or 0))
+    return used
+
+
+def play_slot(nickname: str, wager: int) -> dict[str, Any]:
+    """서버에서 결과를 생성하는 포인트 전용 슬롯 게임입니다.
+
+    현금 결제·환전·출금은 없으며, 베팅 상한과 일일 이용량을 적용합니다.
+    """
+    safe_nickname = _clean_text(nickname, 18)
+    if wager < 1 or wager > SLOT_MAX_WAGER:
+        raise HTTPException(status_code=422, detail=f"한 번에 {SLOT_MAX_WAGER}P까지 사용할 수 있습니다.")
+    profile = _reward_profile(safe_nickname)
+    balance = max(0, int(profile["points"]))
+    if balance < wager:
+        raise HTTPException(status_code=422, detail=f"포인트가 부족합니다. 현재 잔액은 {balance}P입니다.")
+    used_today = _slot_wager_used_today(safe_nickname)
+    if used_today + wager > SLOT_DAILY_WAGER_CAP:
+        raise HTTPException(status_code=429, detail=f"슬롯은 하루 {SLOT_DAILY_WAGER_CAP}P까지 사용할 수 있습니다.")
+
+    rng = random.SystemRandom()
+    reels = [rng.choice(SLOT_SYMBOLS) for _ in range(3)]
+    multiplier = SLOT_MULTIPLIERS.get(reels[0], 0) if len(set(reels)) == 1 else 0
+    if len(set(reels)) == 2:
+        # 두 개 일치 시에는 원금만 돌려주어 잔액이 급격히 줄지 않게 합니다.
+        matching = next(symbol for symbol in reels if reels.count(symbol) == 2)
+        multiplier = 1 if matching in SLOT_SYMBOLS else 0
+    payout = wager * multiplier
+    net = payout - wager
+    reason = f"머니 슬롯 {'·'.join(reels)} · {multiplier}배"
+    supabase.table("chat_messages").insert(
+        {
+            "user_email": safe_nickname,
+            "content": _encode_payload(
+                {
+                    "type": "reward",
+                    "nickname": safe_nickname,
+                    "points": net,
+                    "reason": reason,
+                    "action": "slot_spin",
+                    "game": "money_slot",
+                    "wager": wager,
+                    "payout": payout,
+                    "reels": reels,
+                    "multiplier": multiplier,
+                }
+            ),
+        }
+    ).execute()
+    return {
+        "reels": reels,
+        "wager": wager,
+        "payout": payout,
+        "net": net,
+        "multiplier": multiplier,
+        "daily_wager_used": used_today + wager,
+        "daily_wager_cap": SLOT_DAILY_WAGER_CAP,
+        "profile": _reward_profile(safe_nickname),
+    }
+
+
+@router.get("/community/game/profile/{nickname}")
+def get_game_profile(nickname: str):
+    return {"status": "success", "profile": _reward_profile(nickname)}
+
+
+@router.post("/community/game/slot")
+def spin_money_slot(data: SlotSpinRequest):
+    return {"status": "created", "game": play_slot(data.nickname, data.wager)}
 
 
 @router.get("/community/live/messages")
