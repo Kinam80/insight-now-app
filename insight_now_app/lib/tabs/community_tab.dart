@@ -783,7 +783,7 @@ class _CommunityTabState extends State<CommunityTab>
                   ),
                   SizedBox(height: 4),
                   Text(
-                    '포인트로 가볍게 즐기는 3칸 슬롯 게임',
+                    '9칸 슬롯 · 드랍볼 · 동물 러닝 3종 게임',
                     style: TextStyle(color: Colors.white70, fontSize: 11),
                   ),
                   SizedBox(height: 3),
@@ -1619,6 +1619,7 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
   String _dropLabel = '';
   List<Map<String, dynamic>> _runnerEvents = const [];
   bool _runnerGameOver = false;
+  int _dailyUsed = 0;
   Timer? _animationTimer;
 
   @override
@@ -1708,6 +1709,7 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
         Map<String, dynamic>.from(game['profile'] as Map),
       );
     }
+    _dailyUsed = (game['daily_wager_used'] as num?)?.toInt() ?? _dailyUsed;
     return game;
   }
 
@@ -1814,7 +1816,8 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
       while (mounted &&
           _autoPlaying &&
           _profile.points >= _wager &&
-          rounds < 50) {
+          _dailyUsed + _wager <= 100 &&
+          rounds < 100) {
         await _runOnce();
         rounds += 1;
         if (mounted) {
@@ -1827,6 +1830,8 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
           _autoPlaying = false;
           _message = _profile.points < _wager
               ? '포인트가 부족해 자동 플레이를 멈췄습니다.'
+              : _dailyUsed + _wager > 100
+              ? '오늘의 게임 한도에 도달해 자동 플레이를 멈췄습니다.'
               : '자동 플레이를 멈췄습니다.';
         });
       }
@@ -1960,7 +1965,7 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
             '구슬 경로를 따라 배율 칸에 도착',
             Icons.sports_baseball_rounded,
             const Color(0xFF60A5FA),
-            '꽝·1배 구간이 넓은 공개 확률표',
+            '꽝 40% · 1배 35% · 10배 1% 공개 확률',
           ),
           _gameCard(
             'runner',
