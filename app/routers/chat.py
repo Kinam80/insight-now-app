@@ -21,7 +21,9 @@ BLOCKED_TERMS = ("자살", "죽어", "죽여", "한강 가", "혐오")
 LIVE_MESSAGE_COOLDOWN_SECONDS = 12
 DAILY_POINT_CAP = 60
 GAME_MAX_WAGER = 20
-GAME_DAILY_WAGER_CAP = 100
+# 일일 게임 사용 제한은 운영 정책에서 제거했습니다.
+# 1회 베팅 상한과 잔액 검증은 유지합니다.
+GAME_DAILY_WAGER_CAP: int | None = None
 SLOT_MAX_WAGER = GAME_MAX_WAGER
 SLOT_DAILY_WAGER_CAP = GAME_DAILY_WAGER_CAP
 SLOT_SYMBOLS = ("🍒", "🔔", "⭐", "💎", "7️⃣")
@@ -30,21 +32,21 @@ GAME_RULES = {
     "slot777": {
         "name": "9칸 일확천금 777",
         "max_wager": GAME_MAX_WAGER,
-        "daily_wager_cap": GAME_DAILY_WAGER_CAP,
+        "daily_wager_cap": None,
         "notice": "일반 보드 88% · 당첨 보드 12%, 당첨 보드 배율은 5·10·20배입니다.",
         "probabilities": {"일반 보드": 88, "당첨 보드": 12},
     },
     "dropball": {
         "name": "드랍볼 곱하기 파이낸스",
         "max_wager": GAME_MAX_WAGER,
-        "daily_wager_cap": GAME_DAILY_WAGER_CAP,
+        "daily_wager_cap": None,
         "notice": "꽝·1배 구간이 넓고 고배율 구간은 좁은 공개 확률표를 사용합니다.",
         "probabilities": {"꽝": 40, "1배": 35, "2배": 12, "3배": 8, "5배": 4, "10배": 1},
     },
     "runner": {
         "name": "동물 상자 러닝 배틀",
         "max_wager": GAME_MAX_WAGER,
-        "daily_wager_cap": GAME_DAILY_WAGER_CAP,
+        "daily_wager_cap": None,
         "notice": "각 상자 폭탄 확률 45% · 안전 구간에서 0·1·2·4배 보상이 공개됩니다.",
         "probabilities": {"폭탄": 45, "안전": 55, "안전 보상 0배": 35, "안전 보상 1배": 48, "안전 보상 2배": 14, "안전 보상 4배": 3},
     },
@@ -491,8 +493,7 @@ def _validate_game_wager(nickname: str, wager: int) -> tuple[str, dict[str, Any]
     if balance < wager:
         raise HTTPException(status_code=422, detail=f"포인트가 부족합니다. 현재 잔액은 {balance}P입니다.")
     used_today = _game_wager_used_today(safe_nickname)
-    if used_today + wager > GAME_DAILY_WAGER_CAP:
-        raise HTTPException(status_code=429, detail=f"게임은 하루 {GAME_DAILY_WAGER_CAP}P까지 이용할 수 있습니다.")
+    # 일일 제한은 제거했습니다. 잔액과 1회 베팅 상한만 검증합니다.
     return safe_nickname, profile, used_today
 
 
@@ -516,7 +517,7 @@ def _record_game(nickname: str, game: str, wager: int, net: int, payload: dict[s
         }
     ).execute()
     used_today = _game_wager_used_today(nickname)
-    return {**payload, "wager": wager, "net": net, "daily_wager_used": used_today, "daily_wager_cap": GAME_DAILY_WAGER_CAP, "profile": _reward_profile(nickname)}
+    return {**payload, "wager": wager, "net": net, "daily_wager_used": used_today, "daily_wager_cap": None, "profile": _reward_profile(nickname)}
 
 
 def _slot777_board() -> tuple[list[str], list[int], int]:
@@ -582,7 +583,7 @@ def get_game_profile(nickname: str):
 
 @router.get("/community/game/rules")
 def get_game_rules():
-    return {"status": "success", "games": GAME_RULES, "notice": "현금화·환전·양도 불가 포인트 전용 게임이며 확률표는 운영 정책에 공개됩니다."}
+    return {"status": "success", "games": GAME_RULES, "notice": "현금화·환전·양도 불가 포인트 전용 게임이며, 1회 베팅 상한과 잔액 범위 안에서 이용합니다."}
 
 
 @router.post("/community/game/slot")

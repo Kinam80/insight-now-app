@@ -1619,7 +1619,7 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
   String _dropLabel = '';
   List<Map<String, dynamic>> _runnerEvents = const [];
   bool _runnerGameOver = false;
-  int _dailyUsed = 0;
+
   Timer? _animationTimer;
 
   @override
@@ -1709,7 +1709,7 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
         Map<String, dynamic>.from(game['profile'] as Map),
       );
     }
-    _dailyUsed = (game['daily_wager_used'] as num?)?.toInt() ?? _dailyUsed;
+
     return game;
   }
 
@@ -1816,7 +1816,6 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
       while (mounted &&
           _autoPlaying &&
           _profile.points >= _wager &&
-          _dailyUsed + _wager <= 100 &&
           rounds < 100) {
         await _runOnce();
         rounds += 1;
@@ -1830,8 +1829,8 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
           _autoPlaying = false;
           _message = _profile.points < _wager
               ? '포인트가 부족해 자동 플레이를 멈췄습니다.'
-              : _dailyUsed + _wager > 100
-              ? '오늘의 게임 한도에 도달해 자동 플레이를 멈췄습니다.'
+              : rounds >= 100
+              ? '자동 플레이 100회가 끝났습니다. 계속하려면 다시 시작하세요.'
               : '자동 플레이를 멈췄습니다.';
         });
       }
@@ -1977,7 +1976,7 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
           ),
           const SizedBox(height: 8),
           const Text(
-            '현금화·환전·양도 불가 포인트 전용입니다. 한 번 최대 20P, 하루 최대 100P까지 이용합니다.',
+            '현금화·환전·양도 불가 포인트 전용입니다. 하루 제한 없이 잔액 범위에서 이용하며, 한 번에 최대 20P입니다.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white38, fontSize: 10, height: 1.4),
           ),
