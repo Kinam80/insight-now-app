@@ -1596,7 +1596,8 @@ class _PointArcadeSheet extends StatefulWidget {
   State<_PointArcadeSheet> createState() => _PointArcadeSheetState();
 }
 
-class _PointArcadeSheetState extends State<_PointArcadeSheet> {
+class _PointArcadeSheetState extends State<_PointArcadeSheet>
+    with SingleTickerProviderStateMixin {
   static const _surface = Color(0xFF10233B);
   static const _mint = Color(0xFF4FD1C5);
   static const _gold = Color(0xFFF6C85F);
@@ -1621,11 +1622,16 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
   bool _runnerGameOver = false;
 
   Timer? _animationTimer;
+  late final AnimationController _motionController;
 
   @override
   void initState() {
     super.initState();
     _nickname = widget.initialNickname;
+    _motionController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
     _loadProfile();
   }
 
@@ -1633,6 +1639,7 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
   void dispose() {
     _autoPlaying = false;
     _animationTimer?.cancel();
+    _motionController.dispose();
     super.dispose();
   }
 
@@ -1720,6 +1727,14 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
       _message = null;
       _lastNet = null;
     });
+    _motionController.duration = Duration(
+      milliseconds: _game == 'dropball'
+          ? 1700
+          : _game == 'runner'
+          ? 1500
+          : 1250,
+    );
+    _motionController.forward(from: 0);
     try {
       late final Map<String, dynamic> game;
       if (_game == 'slot777') {
@@ -2189,222 +2204,326 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet> {
   Widget _slotView() {
     return Column(
       children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFF24173C),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: _purple.withValues(alpha: 0.35)),
-          ),
-          child: GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
-            children: _slotBoard
-                .map(
-                  (symbol) => Container(
+        AnimatedBuilder(
+          animation: _motionController,
+          builder: (context, child) {
+            final phase = _motionController.value;
+            return Transform.translate(
+              offset: Offset(0, sin(phase * pi * 24) * (1 - phase) * 5),
+              child: Transform.scale(
+                scale: 1 + sin(phase * pi) * 0.025,
+                child: child,
+              ),
+            );
+          },
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF24173C),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _purple.withValues(alpha: 0.35)),
+              boxShadow: [
+                BoxShadow(
+                  color: _purple.withValues(alpha: 0.22),
+                  blurRadius: 18,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              children: _slotBoard.asMap().entries.map((entry) {
+                final pulse = sin(
+                  (_motionController.value * pi * 10) + entry.key,
+                );
+                return Transform.scale(
+                  scale: 1 + (pulse > 0 ? pulse * 0.025 : 0),
+                  child: Container(
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: _gold.withValues(alpha: 0.3)),
                     ),
-                    child: Text(symbol, style: const TextStyle(fontSize: 30)),
+                    child: Text(
+                      entry.value,
+                      style: const TextStyle(fontSize: 30),
+                    ),
                   ),
-                )
-                .toList(),
+                );
+              }).toList(),
+            ),
           ),
         ),
         const SizedBox(height: 7),
         const Text(
-          '같은 심볼 3개가 한 줄이면 당첨 · 전체 확률표는 게임 안내에 공개',
+          '릴이 빠르게 회전한 뒤 각 칸이 차례대로 멈춥니다 · 확률표 공개',
           style: TextStyle(color: Colors.white54, fontSize: 10),
         ),
       ],
     );
   }
 
-  Widget _dropballView() => Column(
-    children: [
-      Container(
-        height: 220,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: const Color(0xFF0C1C32),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: const Color(0xFF60A5FA).withValues(alpha: 0.35),
-          ),
-        ),
-        child: Stack(
-          children: [
-            for (var row = 1; row < 8; row++)
-              Positioned(
-                top: row * 24.0,
-                left: 0,
-                right: 0,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: List.generate(
-                    row + 1,
-                    (_) => const Icon(
-                      Icons.circle,
-                      size: 5,
-                      color: Colors.white30,
-                    ),
-                  ),
+  Widget _dropballView() {
+    return Column(
+      children: [
+        AnimatedBuilder(
+          animation: _motionController,
+          builder: (context, child) {
+            final path = _path;
+            final rawIndex = path.isEmpty
+                ? 0.0
+                : _motionController.value * (path.length - 1);
+            final index = path.isEmpty
+                ? 0
+                : rawIndex.floor().clamp(0, path.length - 1);
+            final next = path.isEmpty
+                ? 0
+                : (index + 1).clamp(0, path.length - 1);
+            final fraction = path.isEmpty ? 0.0 : rawIndex - index;
+            final x = path.isEmpty
+                ? 50.0
+                : (path[index]['x'] as num).toDouble() * (1 - fraction) +
+                      (path[next]['x'] as num).toDouble() * fraction;
+            final y = path.isEmpty
+                ? 0.0
+                : (path[index]['y'] as num).toDouble() * (1 - fraction) +
+                      (path[next]['y'] as num).toDouble() * fraction;
+            return Container(
+              height: 220,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0C1C32),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: const Color(0xFF60A5FA).withValues(alpha: 0.35),
                 ),
               ),
-            if (_path.isNotEmpty)
-              ..._path.map(
-                (point) => Positioned(
-                  left: ((point['x'] as num? ?? 50).toDouble() / 100) * 300,
-                  top: ((point['y'] as num? ?? 50).toDouble() / 100) * 190,
-                  child: const Icon(
-                    Icons.circle,
-                    size: 8,
-                    color: Color(0xFF60A5FA),
-                  ),
-                ),
-              ),
-            const Positioned(
-              left: 0,
-              right: 0,
-              bottom: 8,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              child: Stack(
                 children: [
-                  Text(
-                    '꽝',
-                    style: TextStyle(color: Colors.white54, fontSize: 11),
-                  ),
-                  Text(
-                    '1배',
-                    style: TextStyle(color: Colors.white70, fontSize: 11),
-                  ),
-                  Text(
-                    '2배',
-                    style: TextStyle(color: Colors.white70, fontSize: 11),
-                  ),
-                  Text(
-                    '3배',
-                    style: TextStyle(color: Colors.white70, fontSize: 11),
-                  ),
-                  Text(
-                    '5배',
-                    style: TextStyle(color: Color(0xFFF6C85F), fontSize: 11),
-                  ),
-                  Text(
-                    '10배',
-                    style: TextStyle(color: Color(0xFFF6C85F), fontSize: 11),
+                  for (var row = 1; row < 8; row++)
+                    Positioned(
+                      top: row * 24.0,
+                      left: 0,
+                      right: 0,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: List.generate(
+                          row + 1,
+                          (_) => const Icon(
+                            Icons.circle,
+                            size: 5,
+                            color: Colors.white30,
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (_path.isNotEmpty)
+                    Positioned(
+                      left: (x / 100) * 300 - 9,
+                      top: (y / 100) * 190,
+                      child: Transform.scale(
+                        scale:
+                            1 +
+                            sin(_motionController.value * pi * 10).abs() * 0.15,
+                        child: Container(
+                          width: 18,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF60A5FA),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(
+                                  0xFF60A5FA,
+                                ).withValues(alpha: 0.75),
+                                blurRadius: 12,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  const Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 8,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        Text(
+                          '꽝',
+                          style: TextStyle(color: Colors.white54, fontSize: 11),
+                        ),
+                        Text(
+                          '1배',
+                          style: TextStyle(color: Colors.white70, fontSize: 11),
+                        ),
+                        Text(
+                          '2배',
+                          style: TextStyle(color: Colors.white70, fontSize: 11),
+                        ),
+                        Text(
+                          '3배',
+                          style: TextStyle(color: Colors.white70, fontSize: 11),
+                        ),
+                        Text(
+                          '5배',
+                          style: TextStyle(
+                            color: Color(0xFFF6C85F),
+                            fontSize: 11,
+                          ),
+                        ),
+                        Text(
+                          '10배',
+                          style: TextStyle(
+                            color: Color(0xFFF6C85F),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
+            );
+          },
         ),
-      ),
-      const SizedBox(height: 7),
-      Text(
-        _dropLabel.isEmpty
-            ? '구슬이 경로를 따라 내려갑니다.'
-            : '도착: $_dropLabel · ${_dropBucket + 1}번 구간',
-        style: const TextStyle(color: Colors.white54, fontSize: 10),
-      ),
-    ],
-  );
+        const SizedBox(height: 7),
+        Text(
+          _dropLabel.isEmpty
+              ? '구슬이 핀 사이를 튕기며 내려갑니다.'
+              : '도착: $_dropLabel · ${_dropBucket + 1}번 구간',
+          style: const TextStyle(color: Colors.white54, fontSize: 10),
+        ),
+      ],
+    );
+  }
 
-  Widget _runnerView() => Column(
-    children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: ['고양이', '강아지', '여우', '토끼']
-            .map(
-              (animal) => ChoiceChip(
-                label: Text(animal),
-                selected: _animal == animal,
-                onSelected: _spinning || _autoPlaying
-                    ? null
-                    : (_) => setState(() => _animal = animal),
-                selectedColor: _mint.withValues(alpha: 0.25),
-                labelStyle: TextStyle(
-                  color: _animal == animal ? _mint : Colors.white60,
-                ),
+  Widget _runnerView() {
+    final animalEmoji = _animal == '고양이'
+        ? '🐈'
+        : _animal == '강아지'
+        ? '🐕'
+        : _animal == '여우'
+        ? '🦊'
+        : '🐇';
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: ['고양이', '강아지', '여우', '토끼'].map((animal) {
+            return ChoiceChip(
+              label: Text(animal),
+              selected: _animal == animal,
+              onSelected: _spinning || _autoPlaying
+                  ? null
+                  : (_) => setState(() => _animal = animal),
+              selectedColor: _mint.withValues(alpha: 0.25),
+              labelStyle: TextStyle(
+                color: _animal == animal ? _mint : Colors.white60,
               ),
-            )
-            .toList(),
-      ),
-      const SizedBox(height: 10),
-      Container(
-        height: 155,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: const Color(0xFF132A31),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _mint.withValues(alpha: 0.35)),
+            );
+          }).toList(),
         ),
-        child: Stack(
-          children: [
-            Positioned(
-              left: 20,
-              right: 20,
-              bottom: 35,
-              child: Container(height: 5, color: Colors.white24),
-            ),
-            Positioned(
-              left: 32,
-              bottom: 48,
-              child: Text(
-                _runnerGameOver
-                    ? '💥'
-                    : _animal == '고양이'
-                    ? '🐈'
-                    : _animal == '강아지'
-                    ? '🐕'
-                    : _animal == '여우'
-                    ? '🦊'
-                    : '🐇',
-                style: const TextStyle(fontSize: 42),
+        const SizedBox(height: 10),
+        AnimatedBuilder(
+          animation: _motionController,
+          builder: (context, child) {
+            final phase = _motionController.value;
+            final runX = 28 + sin(phase * pi * 3) * 8;
+            final bob = sin(phase * pi * 12) * 5;
+            final boxShift = phase * 90;
+            return Container(
+              height: 155,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: const Color(0xFF132A31),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: _mint.withValues(alpha: 0.35)),
               ),
-            ),
-            Positioned(
-              left: 16,
-              right: 16,
-              top: 16,
-              child: Text(
-                _runnerEvents.isEmpty
-                    ? '상자를 터치할 타이밍을 잡아 보세요.'
-                    : _runnerEvents
-                          .map(
-                            (event) => event['kind'] == 'bomb'
-                                ? '💣'
-                                : '${event['multiplier'] ?? 0}배',
-                          )
-                          .join('  →  '),
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontWeight: FontWeight.w800,
-                ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: 20,
+                    right: 20,
+                    bottom: 35,
+                    child: Container(height: 5, color: Colors.white24),
+                  ),
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 80),
+                    left: runX,
+                    bottom: 48 + bob,
+                    child: Transform.scale(
+                      scale: _runnerGameOver ? 1.25 : 1.0,
+                      child: Text(
+                        _runnerGameOver ? '💥' : animalEmoji,
+                        style: const TextStyle(fontSize: 42),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    top: 16,
+                    child: Text(
+                      _runnerEvents.isEmpty
+                          ? '상자를 만나면 도전 또는 멈춤을 선택하세요.'
+                          : _runnerEvents
+                                .map(
+                                  (event) => event['kind'] == 'bomb'
+                                      ? '💣'
+                                      : '${event['multiplier'] ?? 0}배',
+                                )
+                                .join('  →  '),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 28 - boxShift,
+                    bottom: 42,
+                    child: Transform.rotate(
+                      angle: sin(phase * pi * 8) * 0.12,
+                      child: Text(
+                        _runnerGameOver ? '💣' : '📦  📦  📦',
+                        style: const TextStyle(fontSize: 25),
+                      ),
+                    ),
+                  ),
+                  if (_runnerGameOver)
+                    Positioned.fill(
+                      child: Center(
+                        child: Text(
+                          'GAME OVER',
+                          style: TextStyle(
+                            color: Colors.redAccent.withValues(alpha: 0.9),
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-            ),
-            const Positioned(
-              right: 28,
-              bottom: 42,
-              child: Text('📦  📦  📦', style: TextStyle(fontSize: 25)),
-            ),
-          ],
+            );
+          },
         ),
-      ),
-      const SizedBox(height: 7),
-      const Text(
-        '안전 상자는 누적 배율, 폭탄 상자는 즉시 게임 오버입니다.',
-        style: TextStyle(color: Colors.white54, fontSize: 10),
-      ),
-    ],
-  );
+        const SizedBox(height: 7),
+        const Text(
+          '상자 앞에서 도전하고, 폭탄이면 폭발 연출과 함께 게임 오버됩니다.',
+          style: TextStyle(color: Colors.white54, fontSize: 10),
+        ),
+      ],
+    );
+  }
 }
 
 class _CommunityProfile {
