@@ -1732,9 +1732,9 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet>
           ? 1700
           : _game == 'runner'
           ? 1500
-          : 1250,
+          : 1650,
     );
-    _motionController.forward(from: 0);
+    _motionController.stop();
     try {
       late final Map<String, dynamic> game;
       if (_game == 'slot777') {
@@ -1758,6 +1758,16 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet>
           'wager': _wager,
           'animal': _animal,
         });
+      }
+      if (_game == 'slot777') {
+        _animateSlot(
+          game['board'] is List
+              ? (game['board'] as List).map((item) => item.toString()).toList()
+              : _slotBoard,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 1750));
+      } else {
+        _motionController.forward(from: 0);
       }
       if (!mounted) return;
       setState(() {
@@ -1803,20 +1813,10 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet>
   }
 
   void _animateSlot(List<String> finalBoard) {
-    final random = Random();
     _animationTimer?.cancel();
-    _animationTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
-      if (!mounted) return;
-      setState(
-        () => _slotBoard = List.generate(
-          9,
-          (_) => const ['🍒', '🔔', '⭐', '💎', '7️⃣'][random.nextInt(5)],
-        ),
-      );
-    });
-    Future<void>.delayed(const Duration(milliseconds: 650), () {
-      if (mounted) setState(() => _slotBoard = finalBoard);
-    });
+    _slotBoard = finalBoard;
+    _motionController.duration = const Duration(milliseconds: 1650);
+    _motionController.forward(from: 0);
   }
 
   Future<void> _startAuto() async {
@@ -1867,6 +1867,19 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet>
       return;
     }
     setState(() => _wager = amount);
+    if (_autoMode) {
+      await _startAuto();
+    } else {
+      await _runOnce();
+    }
+  }
+
+  Future<void> _startSelectedGame() async {
+    if (_spinning || _autoPlaying || _loading) return;
+    if (_profile.points < _wager) {
+      setState(() => _message = '선택한 배팅 포인트가 현재 잔액보다 큽니다.');
+      return;
+    }
     if (_autoMode) {
       await _startAuto();
     } else {
@@ -2168,36 +2181,103 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet>
   );
 
   Widget _wagerControls() {
-    return Row(
-      children: [1, 5, 10, 20]
-          .map(
-            (amount) => Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(right: amount == 20 ? 0 : 6),
-                child: FilledButton(
-                  onPressed:
-                      _spinning ||
-                          _autoPlaying ||
-                          _loading ||
-                          _profile.points < amount
-                      ? null
-                      : () => _playWithWager(amount),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: amount == _wager
-                        ? _purple
-                        : Colors.white10,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 11),
-                  ),
-                  child: Text(
-                    '${amount}P ${_autoMode ? '자동 시작' : '실행'}',
-                    style: const TextStyle(fontWeight: FontWeight.w900),
+    if (_game == 'slot777') {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            '배팅 포인트를 선택한 후 시작을 누르세요.',
+            style: TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [1, 5, 10, 20].map((amount) {
+              final selected = _wager == amount;
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: amount == 20 ? 0 : 6),
+                  child: SizedBox(
+                    height: 48,
+                    child: FilledButton(
+                      onPressed:
+                          _spinning ||
+                              _autoPlaying ||
+                              _loading ||
+                              _profile.points < amount
+                          ? null
+                          : () => setState(() => _wager = amount),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: selected ? _purple : Colors.white12,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: Colors.white12,
+                        disabledForegroundColor: Colors.white38,
+                        padding: EdgeInsets.zero,
+                      ),
+                      child: Text(
+                        '${amount}P',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ),
                   ),
                 ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 52,
+            child: FilledButton.icon(
+              onPressed: _spinning || _autoPlaying || _loading
+                  ? null
+                  : _startSelectedGame,
+              icon: Icon(
+                _autoMode ? Icons.autorenew_rounded : Icons.play_arrow_rounded,
+              ),
+              label: Text(
+                _autoMode ? '자동 시작' : '시작',
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: _purple,
+                foregroundColor: Colors.white,
               ),
             ),
-          )
-          .toList(),
+          ),
+        ],
+      );
+    }
+    return Row(
+      children: [1, 5, 10, 20].map((amount) {
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(right: amount == 20 ? 0 : 6),
+            child: FilledButton(
+              onPressed:
+                  _spinning ||
+                      _autoPlaying ||
+                      _loading ||
+                      _profile.points < amount
+                  ? null
+                  : () => _playWithWager(amount),
+              style: FilledButton.styleFrom(
+                backgroundColor: amount == _wager ? _purple : Colors.white10,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 11),
+              ),
+              child: Text(
+                '${amount}P ${_autoMode ? '자동 시작' : '실행'}',
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -2237,21 +2317,53 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet>
               crossAxisSpacing: 8,
               mainAxisSpacing: 8,
               children: _slotBoard.asMap().entries.map((entry) {
+                final row = entry.key ~/ 3;
+                final rowDelay = row * 0.16;
+                final rowPhase = ((_motionController.value - rowDelay) / 0.72)
+                    .clamp(0.0, 1.0);
+                final rolling = _spinning && rowPhase < 1.0;
                 final pulse = sin(
-                  (_motionController.value * pi * 10) + entry.key,
+                  (_motionController.value * pi * 18) + entry.key,
                 );
-                return Transform.scale(
-                  scale: 1 + (pulse > 0 ? pulse * 0.025 : 0),
-                  child: Container(
+                final symbolIndex = rolling
+                    ? ((_motionController.value * 22 + entry.key * 3).floor() %
+                          5)
+                    : 0;
+                final visible = rolling
+                    ? const ['🍒', '🔔', '⭐', '💎', '7️⃣'][symbolIndex]
+                    : entry.value;
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 80),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
+                      color: rolling
+                          ? const Color(0xFF35214E)
+                          : Colors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: _gold.withValues(alpha: 0.3)),
+                      border: Border.all(
+                        color: _gold.withValues(alpha: rolling ? 0.65 : 0.3),
+                      ),
                     ),
-                    child: Text(
-                      entry.value,
-                      style: const TextStyle(fontSize: 30),
+                    child: Transform.translate(
+                      offset: Offset(
+                        0,
+                        rolling
+                            ? sin(
+                                    (_motionController.value * pi * 14) +
+                                        entry.key,
+                                  ) *
+                                  22
+                            : 0,
+                      ),
+                      child: Transform.scale(
+                        scale: 1 + (pulse > 0 ? pulse * 0.025 : 0),
+                        child: Text(
+                          visible,
+                          style: const TextStyle(fontSize: 30),
+                        ),
+                      ),
                     ),
                   ),
                 );
