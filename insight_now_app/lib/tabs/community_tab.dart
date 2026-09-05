@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -2282,21 +2283,20 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet>
   }
 
   Widget _slotView() {
+    const reelSymbols = ['🍒', '🔔', '⭐', '💎', '7️⃣', '🍋', 'BAR'];
     return Column(
       children: [
         AnimatedBuilder(
           animation: _motionController,
           builder: (context, child) {
             final phase = _motionController.value;
-            return Transform.translate(
-              offset: Offset(0, sin(phase * pi * 24) * (1 - phase) * 5),
-              child: Transform.scale(
-                scale: 1 + sin(phase * pi) * 0.025,
-                child: child,
-              ),
+            return Transform.scale(
+              scale: 1 + sin(phase * pi) * 0.018,
+              child: child,
             );
           },
           child: Container(
+            height: 286,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: const Color(0xFF24173C),
@@ -2310,73 +2310,111 @@ class _PointArcadeSheetState extends State<_PointArcadeSheet>
                 ),
               ],
             ),
-            child: GridView.count(
-              crossAxisCount: 3,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-              children: _slotBoard.asMap().entries.map((entry) {
-                final row = entry.key ~/ 3;
-                final rowDelay = row * 0.16;
-                final rowPhase = ((_motionController.value - rowDelay) / 0.72)
-                    .clamp(0.0, 1.0);
-                final rolling = _spinning && rowPhase < 1.0;
-                final pulse = sin(
-                  (_motionController.value * pi * 18) + entry.key,
-                );
-                final symbolIndex = rolling
-                    ? ((_motionController.value * 22 + entry.key * 3).floor() %
-                          5)
-                    : 0;
-                final visible = rolling
-                    ? const ['🍒', '🔔', '⭐', '💎', '7️⃣'][symbolIndex]
-                    : entry.value;
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 80),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: rolling
-                          ? const Color(0xFF35214E)
-                          : Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _gold.withValues(alpha: rolling ? 0.65 : 0.3),
-                      ),
-                    ),
-                    child: Transform.translate(
-                      offset: Offset(
-                        0,
-                        rolling
-                            ? sin(
-                                    (_motionController.value * pi * 14) +
-                                        entry.key,
-                                  ) *
-                                  22
-                            : 0,
-                      ),
-                      child: Transform.scale(
-                        scale: 1 + (pulse > 0 ? pulse * 0.025 : 0),
-                        child: Text(
-                          visible,
-                          style: const TextStyle(fontSize: 30),
+            child: AnimatedBuilder(
+              animation: _motionController,
+              builder: (context, _) {
+                final phase = _motionController.value;
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: List.generate(3, (column) {
+                    return Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(right: column == 2 ? 0 : 8),
+                        child: _reelColumn(
+                          column: column,
+                          phase: phase,
+                          reelSymbols: reelSymbols,
                         ),
                       ),
-                    ),
-                  ),
+                    );
+                  }),
                 );
-              }).toList(),
+              },
             ),
           ),
         ),
         const SizedBox(height: 7),
         const Text(
-          '릴이 빠르게 회전한 뒤 각 칸이 차례대로 멈춥니다 · 확률표 공개',
+          '세로 릴이 가속·고속 회전·감속·탄성 정지합니다 · 확률표 공개',
           style: TextStyle(color: Colors.white54, fontSize: 10),
         ),
       ],
+    );
+  }
+
+  Widget _reelColumn({
+    required int column,
+    required double phase,
+    required List<String> reelSymbols,
+  }) {
+    final rowDelay = column * 0.11;
+    final stopPhase = ((phase - rowDelay) / 0.78).clamp(0.0, 1.0);
+    final rolling = _spinning && stopPhase < 1.0;
+    final easing = Curves.easeOutCubic.transform(stopPhase);
+    final bounce = !rolling && _spinning
+        ? sin(((stopPhase - 1.0).clamp(0.0, 1.0)) * pi * 2.4) * 8
+        : 0.0;
+    final blur = rolling ? 1.8 + sin(phase * pi * 16).abs() * 1.2 : 0.0;
+    return Column(
+      children: List.generate(3, (row) {
+        final index = row * 3 + column;
+        final finalSymbol = _slotBoard[index];
+        final travel = rolling
+            ? -((phase * 950 + column * 85) % (reelSymbols.length * 46))
+            : 0.0;
+        final strip = Column(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(9, (i) {
+            return SizedBox(
+              height: 46,
+              child: Center(
+                child: Text(
+                  reelSymbols[(i + column * 2) % reelSymbols.length],
+                  style: const TextStyle(fontSize: 29),
+                ),
+              ),
+            );
+          }),
+        );
+        final symbol = Text(finalSymbol, style: const TextStyle(fontSize: 31));
+        return SizedBox(
+          height: 78,
+          child: Padding(
+            padding: EdgeInsets.only(bottom: row == 2 ? 0 : 8),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: rolling
+                      ? const Color(0xFF35214E)
+                      : Colors.white.withValues(alpha: 0.08),
+                  border: Border.all(
+                    color: _gold.withValues(alpha: rolling ? 0.75 : 0.38),
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: rolling
+                      ? ImageFiltered(
+                          imageFilter: ui.ImageFilter.blur(
+                            sigmaX: 0,
+                            sigmaY: blur,
+                          ),
+                          child: Transform.translate(
+                            offset: Offset(0, travel),
+                            child: strip,
+                          ),
+                        )
+                      : Transform.translate(
+                          offset: Offset(0, bounce + easing * 0),
+                          child: symbol,
+                        ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }),
     );
   }
 
